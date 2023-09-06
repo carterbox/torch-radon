@@ -3,9 +3,8 @@
 #include <torch/extension.h>
 #include <vector>
 
-#include "backward.h"
+#include "radon.h"
 #include "fft.h"
-#include "forward.h"
 #include "log.h"
 #include "noise.h"
 #include "cfg.h"
