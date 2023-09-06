@@ -20,7 +20,8 @@
   CHECK_CUDA(x);                                                               \
   CHECK_CONTIGUOUS(x)
 
-torch::Tensor symbolic_forward(const SymbolicFunction &f, torch::Tensor angles,
+torch::Tensor symbolic_forward(const symbolic::SymbolicFunction &f,
+                               torch::Tensor angles,
                                const ProjectionCfg &proj) {
   TORCH_CHECK(!angles.device().is_cuda(), "angles must be on CPU");
   CHECK_CONTIGUOUS(angles);
@@ -34,8 +35,8 @@ torch::Tensor symbolic_forward(const SymbolicFunction &f, torch::Tensor angles,
   return y;
 }
 
-torch::Tensor symbolic_discretize(const SymbolicFunction &f, const int height,
-                                  const int width) {
+torch::Tensor symbolic_discretize(const symbolic::SymbolicFunction &f,
+                                  const int height, const int width) {
   auto y = torch::empty({height, width});
 
   f.discretize(y.data_ptr<float>(), height, width);
@@ -193,6 +194,7 @@ torch::Tensor irfft(torch::Tensor x, FFTCache &fft_cache) {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+
   m.def("forward", &radon_forward, "Radon forward projection");
   m.def("backward", &radon_backward, "Radon back projection");
 
@@ -209,34 +211,22 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   });
 
   py::class_<TextureCache>(m, "TextureCache")
-      .
-
-      def(py::init<size_t>())
-
+      .def(py::init<size_t>())
       .def("free", &TextureCache::free);
 
   py::class_<FFTCache>(m, "FFTCache")
-      .
-
-      def(py::init<size_t>())
-
+      .def(py::init<size_t>())
       .def("free", &FFTCache::free);
 
   py::class_<RadonNoiseGenerator>(m, "RadonNoiseGenerator")
-      .
-
-      def(py::init<const uint>())
-
-      .def("set_seed", (void (RadonNoiseGenerator::*)(const uint)) &
+      .def(py::init<const uint>())
+      .def("set_seed", (void(RadonNoiseGenerator::*)(const uint)) &
                            RadonNoiseGenerator::set_seed)
       .def("free", &RadonNoiseGenerator::free);
 
   py::class_<VolumeCfg>(m, "VolumeCfg")
-      .
-
-      def(py::init<int, int, int, float, float, float, float, float, float,
-                   bool>())
-
+      .def(py::init<int, int, int, float, float, float, float, float, float,
+                    bool>())
       .def_readonly("depth", &VolumeCfg::depth)
       .def_readonly("height", &VolumeCfg::height)
       .def_readonly("width", &VolumeCfg::width)
@@ -246,14 +236,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       .def_readonly("is_3d", &VolumeCfg::is_3d);
 
   py::class_<ProjectionCfg>(m, "ProjectionCfg")
-      .
-
-      def(py::init<int, float>())
-
-      .
-
-      def(py::init<int, float, int, float, float, float, float, float, int>())
-
+      .def(py::init<int, float>())
+      .def(py::init<int, float, int, float, float, float, float, float, int>())
       .def("is_2d", &ProjectionCfg::is_2d)
       .def("copy", &ProjectionCfg::copy)
       .def_readonly("projection_type", &ProjectionCfg::projection_type)
@@ -267,18 +251,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       .def_readwrite("initial_z", &ProjectionCfg::initial_z)
       .def_readwrite("n_angles", &ProjectionCfg::n_angles);
 
-  py::class_<ExecCfg>(m, "ExecCfg")
-      .
+  py::class_<ExecCfg>(m, "ExecCfg").def(py::init<int, int, int, int>());
 
-      def(py::init<int, int, int, int>());
-
-  py::class_<SymbolicFunction>(m, "SymbolicFunction")
-      .
-
-      def(py::init<float, float>())
-
-      .def("add_gaussian", &SymbolicFunction::add_gaussian)
-      .def("add_ellipse", &SymbolicFunction::add_ellipse)
-      .def("move", &SymbolicFunction::move)
-      .def("scale", &SymbolicFunction::scale);
+  py::class_<symbolic::SymbolicFunction>(m, "SymbolicFunction")
+      .def(py::init<float, float>())
+      .def("add_gaussian", &symbolic::SymbolicFunction::add_gaussian)
+      .def("add_ellipse", &symbolic::SymbolicFunction::add_ellipse)
+      .def("move", &symbolic::SymbolicFunction::move)
+      .def("scale", &symbolic::SymbolicFunction::scale);
 }
