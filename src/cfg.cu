@@ -1,4 +1,4 @@
-#include "parameter_classes.h"
+#include "cfg.h"
 #include "utils.h"
 #include <cuda.h>
 
