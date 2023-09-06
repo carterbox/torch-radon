@@ -3,12 +3,12 @@
 #include <torch/extension.h>
 #include <vector>
 
-#include "backprojection.h"
+#include "backward.h"
 #include "fft.h"
 #include "forward.h"
 #include "log.h"
 #include "noise.h"
-#include "parameter_classes.h"
+#include "cfg.h"
 #include "symbolic.h"
 #include "texture.h"
 #include "utils.h"

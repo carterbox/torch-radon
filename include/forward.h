@@ -1,3 +1,5 @@
+#pragma once
+
 #include "texture.h"
 
 template<typename T>

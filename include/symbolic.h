@@ -1,6 +1,8 @@
+#pragma once
+
 #include <vector>
 
-#include "parameter_classes.h"
+#include "cfg.h"
 
 struct Gaussian
 {

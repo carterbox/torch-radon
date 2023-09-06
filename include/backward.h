@@ -1,5 +1,7 @@
+#pragma once
+
 #include "texture.h"
-#include "parameter_classes.h"
+#include "cfg.h"
 
 template< typename T> void radon_backward_cuda(
         const T *x, const float *angles, T *y, TextureCache &tex_cache,

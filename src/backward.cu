@@ -5,7 +5,7 @@
 
 #include "utils.h"
 #include "texture.h"
-#include "backprojection.h"
+#include "backward.h"
 
 template<bool parallel_beam, int channels, typename T>
 __global__ void

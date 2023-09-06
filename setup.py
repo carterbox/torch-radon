@@ -30,12 +30,12 @@ setup(
         CUDAExtension(
             name="torch_radon_cuda",
             sources=[
-                "src/backprojection.cu",
+                "src/backward.cu",
                 "src/fft.cu",
                 "src/forward.cu",
                 "src/log.cpp",
                 "src/noise.cu",
-                "src/parameter_classes.cu",
+                "src/cfg.cu",
                 "src/pytorch.cpp",
                 "src/symbolic.cpp",
                 "src/texture.cu",
