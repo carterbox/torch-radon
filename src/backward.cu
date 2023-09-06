@@ -9,9 +9,9 @@
 
 template <bool parallel_beam, int channels, typename T>
 __global__ void
-radon_backward_kernel(T *__restrict__ output, cudaTextureObject_t texture,
-                      const float *__restrict__ angles, const VolumeCfg vol_cfg,
-                      const ProjectionCfg proj_cfg) {
+backward_kernel(T *__restrict__ output, cudaTextureObject_t texture,
+                const float *__restrict__ angles, const VolumeCfg vol_cfg,
+                const ProjectionCfg proj_cfg) {
   // Calculate image coordinates
   const uint x = blockIdx.x * blockDim.x + threadIdx.x;
   const uint y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -109,10 +109,11 @@ radon_backward_kernel(T *__restrict__ output, cudaTextureObject_t texture,
 }
 
 template <typename T>
-void radon_backward_cuda(const T *x, const float *angles, T *y,
-                         TextureCache &tex_cache, const VolumeCfg &vol_cfg,
-                         const ProjectionCfg &proj_cfg, const ExecCfg &exec_cfg,
-                         const int batch_size, const int device) {
+void radon::backward_cuda(const T *x, const float *angles, T *y,
+                          TextureCache &tex_cache, const VolumeCfg &vol_cfg,
+                          const ProjectionCfg &proj_cfg,
+                          const ExecCfg &exec_cfg, const int batch_size,
+                          const int device) {
   constexpr bool is_float = std::is_same<T, float>::value;
   constexpr int precision = is_float ? PRECISION_FLOAT : PRECISION_HALF;
   const int channels = exec_cfg.get_channels(batch_size);
@@ -131,50 +132,49 @@ void radon_backward_cuda(const T *x, const float *angles, T *y,
   // Invoke kernel
   if (proj_cfg.projection_type == FANBEAM) {
     if (channels == 1) {
-      radon_backward_kernel<false, 1><<<grid_dim, block_dim>>>(
+      backward_kernel<false, 1><<<grid_dim, block_dim>>>(
           (float *)y, tex->texture, angles, vol_cfg, proj_cfg);
     } else {
       if (is_float) {
-        radon_backward_kernel<false, 4><<<grid_dim, block_dim>>>(
+        backward_kernel<false, 4><<<grid_dim, block_dim>>>(
             (float *)y, tex->texture, angles, vol_cfg, proj_cfg);
       } else {
-        radon_backward_kernel<false, 4><<<grid_dim, block_dim>>>(
+        backward_kernel<false, 4><<<grid_dim, block_dim>>>(
             (__half *)y, tex->texture, angles, vol_cfg, proj_cfg);
       }
     }
   } else {
     if (channels == 1) {
-      radon_backward_kernel<true, 1><<<grid_dim, block_dim>>>(
+      backward_kernel<true, 1><<<grid_dim, block_dim>>>(
           (float *)y, tex->texture, angles, vol_cfg, proj_cfg);
     } else {
       if (is_float) {
-        radon_backward_kernel<true, 4><<<grid_dim, block_dim>>>(
+        backward_kernel<true, 4><<<grid_dim, block_dim>>>(
             (float *)y, tex->texture, angles, vol_cfg, proj_cfg);
       } else {
-        radon_backward_kernel<true, 4><<<grid_dim, block_dim>>>(
+        backward_kernel<true, 4><<<grid_dim, block_dim>>>(
             (__half *)y, tex->texture, angles, vol_cfg, proj_cfg);
       }
     }
   }
 }
 
-template void radon_backward_cuda<float>(
+template void radon::backward_cuda<float>(
     const float *x, const float *angles, float *y, TextureCache &tex_cache,
     const VolumeCfg &vol_cfg, const ProjectionCfg &proj_cfg,
     const ExecCfg &exec_cfg, const int batch_size, const int device);
 
-template void radon_backward_cuda<unsigned short>(
+template void radon::backward_cuda<unsigned short>(
     const unsigned short *x, const float *angles, unsigned short *y,
     TextureCache &tex_cache, const VolumeCfg &vol_cfg,
     const ProjectionCfg &proj_cfg, const ExecCfg &exec_cfg,
     const int batch_size, const int device);
 
 template <int channels, typename T>
-__global__ void radon_backward_kernel_3d(T *__restrict__ output,
-                                         cudaTextureObject_t texture,
-                                         const float *__restrict__ angles,
-                                         const VolumeCfg vol_cfg,
-                                         const ProjectionCfg proj_cfg) {
+__global__ void
+backward_kernel_3d(T *__restrict__ output, cudaTextureObject_t texture,
+                   const float *__restrict__ angles, const VolumeCfg vol_cfg,
+                   const ProjectionCfg proj_cfg) {
   // TODO consider pitch and initial_z
   // Calculate volume coordinates
   const uint x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -264,11 +264,11 @@ __global__ void radon_backward_kernel_3d(T *__restrict__ output,
 }
 
 template <typename T>
-void radon_backward_cuda_3d(const T *x, const float *angles, T *y,
-                            TextureCache &tex_cache, const VolumeCfg &vol_cfg,
-                            const ProjectionCfg &proj_cfg,
-                            const ExecCfg &exec_cfg, const int batch_size,
-                            const int device) {
+void radon::backward_cuda_3d(const T *x, const float *angles, T *y,
+                             TextureCache &tex_cache, const VolumeCfg &vol_cfg,
+                             const ProjectionCfg &proj_cfg,
+                             const ExecCfg &exec_cfg, const int batch_size,
+                             const int device) {
   constexpr bool is_float = std::is_same<T, float>::value;
   constexpr int precision = is_float ? PRECISION_FLOAT : PRECISION_HALF;
   const int channels = exec_cfg.get_channels(batch_size);
@@ -288,26 +288,26 @@ void radon_backward_cuda_3d(const T *x, const float *angles, T *y,
 
     // Invoke kernel
     if (channels == 1) {
-      radon_backward_kernel_3d<1><<<grid_dim, block_dim>>>(
-          local_y, tex->texture, angles, vol_cfg, proj_cfg);
+      backward_kernel_3d<1><<<grid_dim, block_dim>>>(local_y, tex->texture,
+                                                     angles, vol_cfg, proj_cfg);
     } else {
       if (is_float) {
-        radon_backward_kernel_3d<4><<<grid_dim, block_dim>>>(
+        backward_kernel_3d<4><<<grid_dim, block_dim>>>(
             local_y, tex->texture, angles, vol_cfg, proj_cfg);
       } else {
-        radon_backward_kernel_3d<4><<<grid_dim, block_dim>>>(
+        backward_kernel_3d<4><<<grid_dim, block_dim>>>(
             (__half *)local_y, tex->texture, angles, vol_cfg, proj_cfg);
       }
     }
   }
 }
 
-template void radon_backward_cuda_3d<float>(
+template void radon::backward_cuda_3d<float>(
     const float *x, const float *angles, float *y, TextureCache &tex_cache,
     const VolumeCfg &vol_cfg, const ProjectionCfg &proj_cfg,
     const ExecCfg &exec_cfg, const int batch_size, const int device);
 
-template void radon_backward_cuda_3d<unsigned short>(
+template void radon::backward_cuda_3d<unsigned short>(
     const unsigned short *x, const float *angles, unsigned short *y,
     TextureCache &tex_cache, const VolumeCfg &vol_cfg,
     const ProjectionCfg &proj_cfg, const ExecCfg &exec_cfg,

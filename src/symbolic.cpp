@@ -4,11 +4,11 @@
 
 using namespace rosh;
 
-Gaussian::Gaussian(float _k, float _cx, float _cy, float _a, float _b)
+symbolic::Gaussian::Gaussian(float _k, float _cx, float _cy, float _a, float _b)
     : k(_k), cx(_cx), cy(_cy), a(_a), b(_b) {}
 
-float Gaussian::line_integral(float s_x, float s_y, float e_x,
-                              float e_y) const {
+float symbolic::Gaussian::line_integral(float s_x, float s_y, float e_x,
+                                        float e_y) const {
   float x0 = a * sq(s_x);
   float x1 = b * sq(s_y);
   float x2 = 2 * a * e_x;
@@ -36,29 +36,30 @@ float Gaussian::line_integral(float s_x, float s_y, float e_x,
   return y;
 }
 
-float Gaussian::evaluate(float x, float y) const {
+float symbolic::Gaussian::evaluate(float x, float y) const {
   float dx = x - cx;
   float dy = y - cy;
 
   return k * exp(-a * dx * dx - b * dy * dy);
 }
 
-void Gaussian::move(float dx, float dy) {
+void symbolic::Gaussian::move(float dx, float dy) {
   cx += dx;
   cy += dy;
 }
 
-void Gaussian::scale(float sx, float sy) {
+void symbolic::Gaussian::scale(float sx, float sy) {
   cx *= sx;
   cy *= sy;
   a /= sx * sx;
   b /= sy * sy;
 }
 
-Ellipse::Ellipse(float _k, float _cx, float _cy, float rx, float ry)
+symbolic::Ellipse::Ellipse(float _k, float _cx, float _cy, float rx, float ry)
     : k(_k), cx(_cx), cy(_cy), radius_x(rx), radius_y(ry), aspect(rx / ry) {}
 
-float Ellipse::line_integral(float s_x, float s_y, float e_x, float e_y) const {
+float symbolic::Ellipse::line_integral(float s_x, float s_y, float e_x,
+                                       float e_y) const {
   const float dx = e_x - s_x;
   const float dy = aspect * (e_y - s_y);
   const float cdx = s_x - cx;
@@ -80,7 +81,7 @@ float Ellipse::line_integral(float s_x, float s_y, float e_x, float e_y) const {
   return hypot(dx, e_y - s_y) * (alpha_e - alpha_s);
 }
 
-float Ellipse::evaluate(float x, float y) const {
+float symbolic::Ellipse::evaluate(float x, float y) const {
   float tmp = 0;
   float dx = cx - x;
   float dy = aspect * (cy - y);
@@ -99,12 +100,12 @@ float Ellipse::evaluate(float x, float y) const {
   return tmp / 9.0f;
 }
 
-void Ellipse::move(float dx, float dy) {
+void symbolic::Ellipse::move(float dx, float dy) {
   cx += dx;
   cy += dy;
 }
 
-void Ellipse::scale(float sx, float sy) {
+void symbolic::Ellipse::scale(float sx, float sy) {
   cx *= sx;
   cy *= sy;
   radius_x *= sx;
@@ -112,20 +113,20 @@ void Ellipse::scale(float sx, float sy) {
   aspect = radius_x / radius_y;
 }
 
-SymbolicFunction::SymbolicFunction(float h, float w)
+symbolic::SymbolicFunction::SymbolicFunction(float h, float w)
     : min_x(-w / 2), min_y(-h / 2), max_x(w / 2), max_y(h / 2) {}
 
-void SymbolicFunction::add_gaussian(float k, float cx, float cy, float a,
-                                    float b) {
+void symbolic::SymbolicFunction::add_gaussian(float k, float cx, float cy,
+                                              float a, float b) {
   gaussians.push_back(Gaussian(k, cx, cy, a, b));
 }
 
-void SymbolicFunction::add_ellipse(float k, float cx, float cy, float r,
-                                   float a) {
+void symbolic::SymbolicFunction::add_ellipse(float k, float cx, float cy,
+                                             float r, float a) {
   ellipses.push_back(Ellipse(k, cx, cy, r, a));
 }
 
-void SymbolicFunction::move(float dx, float dy) {
+void symbolic::SymbolicFunction::move(float dx, float dy) {
   min_x += dx;
   min_y += dy;
   max_x += dx;
@@ -139,7 +140,7 @@ void SymbolicFunction::move(float dx, float dy) {
   }
 }
 
-void SymbolicFunction::scale(float sx, float sy) {
+void symbolic::SymbolicFunction::scale(float sx, float sy) {
   min_x *= sx;
   min_y *= sy;
   max_x *= sx;
@@ -153,14 +154,14 @@ void SymbolicFunction::scale(float sx, float sy) {
   }
 }
 
-float SymbolicFunction::max_distance_from_origin() const {
+float symbolic::SymbolicFunction::max_distance_from_origin() const {
   float x = max(abs(min_x), abs(max_x));
   float y = max(abs(min_y), abs(max_y));
 
   return hypot(x, y);
 }
 
-void SymbolicFunction::discretize(float *data, int h, int w) const {
+void symbolic::SymbolicFunction::discretize(float *data, int h, int w) const {
   for (int i = 0; i < h; i++) {
     float y = i + 0.5f - float(h) / 2;
     for (int j = 0; j < w; j++) {
@@ -181,8 +182,8 @@ void SymbolicFunction::discretize(float *data, int h, int w) const {
   }
 }
 
-float SymbolicFunction::line_integral(float s_x, float s_y, float e_x,
-                                      float e_y) const {
+float symbolic::SymbolicFunction::line_integral(float s_x, float s_y, float e_x,
+                                                float e_y) const {
   // clip segment to function domain
   float dx = e_x - s_x;
   float dy = e_y - s_y;
@@ -216,9 +217,9 @@ float SymbolicFunction::line_integral(float s_x, float s_y, float e_x,
   return tmp;
 }
 
-void symbolic_forward(const SymbolicFunction &f, const ProjectionCfg &proj,
-                      const float *angles, const int n_angles,
-                      float *sinogram) {
+void symbolic::forward(const SymbolicFunction &f, const ProjectionCfg &proj,
+                       const float *angles, const int n_angles,
+                       float *sinogram) {
   for (int angle_id = 0; angle_id < n_angles; angle_id++) {
     for (int ray_id = 0; ray_id < proj.det_count_u; ray_id++) {
       // compute ray
