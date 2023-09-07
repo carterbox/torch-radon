@@ -5,10 +5,20 @@
 using namespace rosh;
 
 symbolic::Gaussian::Gaussian(float _k, float _cx, float _cy, float _a, float _b)
-    : k(_k), cx(_cx), cy(_cy), a(_a), b(_b) {}
+  : k(_k)
+  , cx(_cx)
+  , cy(_cy)
+  , a(_a)
+  , b(_b)
+{
+}
 
-float symbolic::Gaussian::line_integral(float s_x, float s_y, float e_x,
-                                        float e_y) const {
+float
+symbolic::Gaussian::line_integral(float s_x,
+                                  float s_y,
+                                  float e_x,
+                                  float e_y) const
+{
   float x0 = a * sq(s_x);
   float x1 = b * sq(s_y);
   float x2 = 2 * a * e_x;
@@ -36,19 +46,25 @@ float symbolic::Gaussian::line_integral(float s_x, float s_y, float e_x,
   return y;
 }
 
-float symbolic::Gaussian::evaluate(float x, float y) const {
+float
+symbolic::Gaussian::evaluate(float x, float y) const
+{
   float dx = x - cx;
   float dy = y - cy;
 
   return k * exp(-a * dx * dx - b * dy * dy);
 }
 
-void symbolic::Gaussian::move(float dx, float dy) {
+void
+symbolic::Gaussian::move(float dx, float dy)
+{
   cx += dx;
   cy += dy;
 }
 
-void symbolic::Gaussian::scale(float sx, float sy) {
+void
+symbolic::Gaussian::scale(float sx, float sy)
+{
   cx *= sx;
   cy *= sy;
   a /= sx * sx;
@@ -56,10 +72,21 @@ void symbolic::Gaussian::scale(float sx, float sy) {
 }
 
 symbolic::Ellipse::Ellipse(float _k, float _cx, float _cy, float rx, float ry)
-    : k(_k), cx(_cx), cy(_cy), radius_x(rx), radius_y(ry), aspect(rx / ry) {}
+  : k(_k)
+  , cx(_cx)
+  , cy(_cy)
+  , radius_x(rx)
+  , radius_y(ry)
+  , aspect(rx / ry)
+{
+}
 
-float symbolic::Ellipse::line_integral(float s_x, float s_y, float e_x,
-                                       float e_y) const {
+float
+symbolic::Ellipse::line_integral(float s_x,
+                                 float s_y,
+                                 float e_x,
+                                 float e_y) const
+{
   const float dx = e_x - s_x;
   const float dy = aspect * (e_y - s_y);
   const float cdx = s_x - cx;
@@ -81,7 +108,9 @@ float symbolic::Ellipse::line_integral(float s_x, float s_y, float e_x,
   return hypot(dx, e_y - s_y) * (alpha_e - alpha_s);
 }
 
-float symbolic::Ellipse::evaluate(float x, float y) const {
+float
+symbolic::Ellipse::evaluate(float x, float y) const
+{
   float tmp = 0;
   float dx = cx - x;
   float dy = aspect * (cy - y);
@@ -100,12 +129,16 @@ float symbolic::Ellipse::evaluate(float x, float y) const {
   return tmp / 9.0f;
 }
 
-void symbolic::Ellipse::move(float dx, float dy) {
+void
+symbolic::Ellipse::move(float dx, float dy)
+{
   cx += dx;
   cy += dy;
 }
 
-void symbolic::Ellipse::scale(float sx, float sy) {
+void
+symbolic::Ellipse::scale(float sx, float sy)
+{
   cx *= sx;
   cy *= sy;
   radius_x *= sx;
@@ -114,54 +147,77 @@ void symbolic::Ellipse::scale(float sx, float sy) {
 }
 
 symbolic::SymbolicFunction::SymbolicFunction(float h, float w)
-    : min_x(-w / 2), min_y(-h / 2), max_x(w / 2), max_y(h / 2) {}
+  : min_x(-w / 2)
+  , min_y(-h / 2)
+  , max_x(w / 2)
+  , max_y(h / 2)
+{
+}
 
-void symbolic::SymbolicFunction::add_gaussian(float k, float cx, float cy,
-                                              float a, float b) {
+void
+symbolic::SymbolicFunction::add_gaussian(float k,
+                                         float cx,
+                                         float cy,
+                                         float a,
+                                         float b)
+{
   gaussians.push_back(Gaussian(k, cx, cy, a, b));
 }
 
-void symbolic::SymbolicFunction::add_ellipse(float k, float cx, float cy,
-                                             float r, float a) {
+void
+symbolic::SymbolicFunction::add_ellipse(float k,
+                                        float cx,
+                                        float cy,
+                                        float r,
+                                        float a)
+{
   ellipses.push_back(Ellipse(k, cx, cy, r, a));
 }
 
-void symbolic::SymbolicFunction::move(float dx, float dy) {
+void
+symbolic::SymbolicFunction::move(float dx, float dy)
+{
   min_x += dx;
   min_y += dy;
   max_x += dx;
   max_y += dy;
 
-  for (auto &gaussian : gaussians) {
+  for (auto& gaussian : gaussians) {
     gaussian.move(dx, dy);
   }
-  for (auto &ellipse : ellipses) {
+  for (auto& ellipse : ellipses) {
     ellipse.move(dx, dy);
   }
 }
 
-void symbolic::SymbolicFunction::scale(float sx, float sy) {
+void
+symbolic::SymbolicFunction::scale(float sx, float sy)
+{
   min_x *= sx;
   min_y *= sy;
   max_x *= sx;
   max_y *= sy;
 
-  for (auto &gaussian : gaussians) {
+  for (auto& gaussian : gaussians) {
     gaussian.scale(sx, sy);
   }
-  for (auto &ellipse : ellipses) {
+  for (auto& ellipse : ellipses) {
     ellipse.scale(sx, sy);
   }
 }
 
-float symbolic::SymbolicFunction::max_distance_from_origin() const {
+float
+symbolic::SymbolicFunction::max_distance_from_origin() const
+{
   float x = max(abs(min_x), abs(max_x));
   float y = max(abs(min_y), abs(max_y));
 
   return hypot(x, y);
 }
 
-void symbolic::SymbolicFunction::discretize(float *data, int h, int w) const {
+void
+symbolic::SymbolicFunction::discretize(float* data, int h, int w) const
+{
   for (int i = 0; i < h; i++) {
     float y = i + 0.5f - float(h) / 2;
     for (int j = 0; j < w; j++) {
@@ -169,9 +225,9 @@ void symbolic::SymbolicFunction::discretize(float *data, int h, int w) const {
 
       if (min_x <= x && x <= max_x && min_y <= y && y <= max_y) {
         float tmp = 0.0f;
-        for (auto &gaussian : gaussians)
+        for (auto& gaussian : gaussians)
           tmp += gaussian.evaluate(x, y);
-        for (auto &ellipse : ellipses)
+        for (auto& ellipse : ellipses)
           tmp += ellipse.evaluate(x, y);
 
         data[i * w + j] = tmp;
@@ -182,8 +238,12 @@ void symbolic::SymbolicFunction::discretize(float *data, int h, int w) const {
   }
 }
 
-float symbolic::SymbolicFunction::line_integral(float s_x, float s_y, float e_x,
-                                                float e_y) const {
+float
+symbolic::SymbolicFunction::line_integral(float s_x,
+                                          float s_y,
+                                          float e_x,
+                                          float e_y) const
+{
   // clip segment to function domain
   float dx = e_x - s_x;
   float dy = e_y - s_y;
@@ -195,9 +255,9 @@ float symbolic::SymbolicFunction::line_integral(float s_x, float s_y, float e_x,
   const float alpha_y_m = (min_y - s_y) / dy;
   const float alpha_y_p = (max_y - s_y) / dy;
   const float alpha_s =
-      max(min(alpha_x_p, alpha_x_m), min(alpha_y_p, alpha_y_m));
+    max(min(alpha_x_p, alpha_x_m), min(alpha_y_p, alpha_y_m));
   const float alpha_e =
-      min(max(alpha_x_p, alpha_x_m), max(alpha_y_p, alpha_y_m));
+    min(max(alpha_x_p, alpha_x_m), max(alpha_y_p, alpha_y_m));
 
   if (alpha_s >= alpha_e) {
     return 0.0f;
@@ -209,17 +269,21 @@ float symbolic::SymbolicFunction::line_integral(float s_x, float s_y, float e_x,
   e_y = s_y + dy * (alpha_e - alpha_s);
 
   float tmp = 0.0f;
-  for (auto &gaussian : gaussians)
+  for (auto& gaussian : gaussians)
     tmp += gaussian.line_integral(s_x, s_y, e_x, e_y);
-  for (auto &ellipse : ellipses)
+  for (auto& ellipse : ellipses)
     tmp += ellipse.line_integral(s_x, s_y, e_x, e_y);
 
   return tmp;
 }
 
-void symbolic::forward(const SymbolicFunction &f, const ProjectionCfg &proj,
-                       const float *angles, const int n_angles,
-                       float *sinogram) {
+void
+symbolic::forward(const SymbolicFunction& f,
+                  const ProjectionCfg& proj,
+                  const float* angles,
+                  const int n_angles,
+                  float* sinogram)
+{
   for (int angle_id = 0; angle_id < n_angles; angle_id++) {
     for (int ray_id = 0; ray_id < proj.det_count_u; ray_id++) {
       // compute ray
@@ -247,7 +311,7 @@ void symbolic::forward(const SymbolicFunction &f, const ProjectionCfg &proj,
       float rey = -ex * sn + ey * cs;
 
       sinogram[angle_id * proj.det_count_u + ray_id] =
-          f.line_integral(rsx, rsy, rex, rey);
+        f.line_integral(rsx, rsy, rex, rey);
     }
   }
 }
