@@ -7,6 +7,13 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+enum TextureType
+{
+  TEX_1D_LAYERED = 0,
+  TEX_2D_LAYERED = 1,
+  TEX_3D = 2
+};
+
 class TextureConfig
 {
 public:
