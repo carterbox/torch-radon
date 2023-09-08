@@ -34,7 +34,7 @@ public:
 
   bool operator==(const TextureConfig& o) const;
 
-  int get_texture_type() const;
+  TextureType get_texture_type() const;
 };
 
 TextureConfig

@@ -32,7 +32,7 @@ TextureConfig::operator==(const TextureConfig& o) const
          this->precision == o.precision;
 }
 
-int
+TextureType
 TextureConfig::get_texture_type() const
 {
   if (this->is_layered && this->height == 0)
