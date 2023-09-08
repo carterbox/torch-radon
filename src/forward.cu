@@ -5,6 +5,7 @@
 
 #include "cfg.h"
 #include "log.h"
+#include "radon.h"
 #include "texture.h"
 #include "utils.h"
 

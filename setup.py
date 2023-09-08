@@ -45,6 +45,7 @@ setup(
                 "cxx": [
                     # GNU++14 required for hexfloat extension used in rmath.h
                     "-std=gnu++14",
+                    "-fvisibility=hidden",
                 ],
                 "nvcc": [
                     # __half conversions required in backprojection
