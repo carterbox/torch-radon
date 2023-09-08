@@ -60,8 +60,6 @@ public:
   int det_count_v;
   float det_spacing_v;
 
-  int n_angles;
-
   // source and detector distances (for fanbeam and coneflat)
   float s_dist = 0.0;
   float d_dist = 0.0;
@@ -71,6 +69,8 @@ public:
   float initial_z;
 
   int projection_type;
+
+  int n_angles;
 
   ProjectionCfg(int dc_u,
                 float ds_u,
