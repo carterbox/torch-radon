@@ -1,11 +1,13 @@
 #ifndef TORCH_RADON_TEXTURE_CACHE_H
 #define TORCH_RADON_TEXTURE_CACHE_H
 
+#include <cuda.h>
+#include <cuda_fp16.h>
+#include <cuda_runtime.h>
+
 #include "cache.h"
 #include "defines.h"
 #include "utils.h"
-#include <cuda.h>
-#include <cuda_runtime.h>
 
 enum TextureType
 {
@@ -56,7 +58,7 @@ public:
 
   Texture(TextureConfig c);
   void put(const float* data);
-  void put(const unsigned short* data);
+  void put(const __half* data);
 
   bool matches(TextureConfig& k);
 

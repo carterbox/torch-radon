@@ -1,3 +1,4 @@
+#include <cuda_fp16.h>
 #include <iostream>
 #include <math.h>
 #include <torch/extension.h>
@@ -75,9 +76,9 @@ radon_forward(torch::Tensor x,
       options);
 
     if (dtype == torch::kFloat16) {
-      radon::forward_cuda_3d((unsigned short*)x.data_ptr<at::Half>(),
+      radon::forward_cuda_3d((__half*)x.data_ptr<at::Half>(),
                              angles.data_ptr<float>(),
-                             (unsigned short*)y.data_ptr<at::Half>(),
+                             (__half*)y.data_ptr<at::Half>(),
                              tex_cache,
                              vol_cfg,
                              proj_cfg,
@@ -101,9 +102,9 @@ radon_forward(torch::Tensor x,
       torch::empty({ batch_size, n_angles, proj_cfg.det_count_u }, options);
 
     if (dtype == torch::kFloat16) {
-      radon::forward_cuda((unsigned short*)x.data_ptr<at::Half>(),
+      radon::forward_cuda((__half*)x.data_ptr<at::Half>(),
                           angles.data_ptr<float>(),
-                          (unsigned short*)y.data_ptr<at::Half>(),
+                          (__half*)y.data_ptr<at::Half>(),
                           tex_cache,
                           vol_cfg,
                           proj_cfg,
@@ -151,9 +152,9 @@ radon_backward(torch::Tensor x,
       { batch_size, vol_cfg.depth, vol_cfg.height, vol_cfg.width }, options);
 
     if (dtype == torch::kFloat16) {
-      radon::backward_cuda_3d((unsigned short*)x.data_ptr<at::Half>(),
+      radon::backward_cuda_3d((__half*)x.data_ptr<at::Half>(),
                               angles.data_ptr<float>(),
-                              (unsigned short*)y.data_ptr<at::Half>(),
+                              (__half*)y.data_ptr<at::Half>(),
                               tex_cache,
                               vol_cfg,
                               proj_cfg,
@@ -177,9 +178,9 @@ radon_backward(torch::Tensor x,
       torch::empty({ batch_size, vol_cfg.height, vol_cfg.width }, options);
 
     if (dtype == torch::kFloat16) {
-      radon::backward_cuda((unsigned short*)x.data_ptr<at::Half>(),
+      radon::backward_cuda((__half*)x.data_ptr<at::Half>(),
                            angles.data_ptr<float>(),
-                           (unsigned short*)y.data_ptr<at::Half>(),
+                           (__half*)y.data_ptr<at::Half>(),
                            tex_cache,
                            vol_cfg,
                            proj_cfg,

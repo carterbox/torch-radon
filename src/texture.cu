@@ -241,7 +241,7 @@ Texture::put(const float* data)
 }
 
 void
-Texture::put(const unsigned short* data)
+Texture::put(const __half* data)
 {
   if (this->cfg.precision == PRECISION_FLOAT) {
     LOG_WARNING("Putting single precision data into a half precision texture");

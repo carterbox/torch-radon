@@ -179,32 +179,27 @@ radon::forward_cuda(const T* x,
   LOG_DEBUG("Grid Size x:" << grid_dim.x << " y:" << grid_dim.y
                            << " z:" << grid_dim.z);
 
-  if (proj_cfg.projection_type == FANBEAM) {
-    if (channels == 1) {
-      forward_kernel<false, 1><<<grid_dim, block_dim>>>(
-        (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
-    } else {
-      if (is_float) {
-        forward_kernel<false, 4><<<grid_dim, block_dim>>>(
-          (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
+  switch (channels) {
+    case 1:
+      if (proj_cfg.projection_type == FANBEAM) {
+        forward_kernel<false, 1, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
       } else {
-        forward_kernel<false, 4><<<grid_dim, block_dim>>>(
-          (__half*)y, tex->texture, angles, vol_cfg, proj_cfg);
+        forward_kernel<true, 1, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
       }
-    }
-  } else {
-    if (channels == 1) {
-      forward_kernel<true, 1><<<grid_dim, block_dim>>>(
-        (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
-    } else {
-      if (is_float) {
-        forward_kernel<true, 4><<<grid_dim, block_dim>>>(
-          (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
+      break;
+    case 4:
+      if (proj_cfg.projection_type == FANBEAM) {
+        forward_kernel<false, 4, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
       } else {
-        forward_kernel<true, 4><<<grid_dim, block_dim>>>(
-          (__half*)y, tex->texture, angles, vol_cfg, proj_cfg);
+        forward_kernel<true, 4, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
       }
-    }
+      break;
+    default:
+      throw std::invalid_argument("This is an unsupported number of channels!");
   }
 }
 
@@ -220,15 +215,15 @@ radon::forward_cuda<float>(const float* x,
                            const int device);
 
 template void
-radon::forward_cuda<unsigned short>(const unsigned short* x,
-                                    const float* angles,
-                                    unsigned short* y,
-                                    TextureCache& tex_cache,
-                                    const VolumeCfg& vol_cfg,
-                                    const ProjectionCfg& proj_cfg,
-                                    const ExecCfg& exec_cfg,
-                                    const int batch_size,
-                                    const int device);
+radon::forward_cuda<__half>(const __half* x,
+                            const float* angles,
+                            __half* y,
+                            TextureCache& tex_cache,
+                            const VolumeCfg& vol_cfg,
+                            const ProjectionCfg& proj_cfg,
+                            const ExecCfg& exec_cfg,
+                            const int batch_size,
+                            const int device);
 
 template<int channels, typename T>
 __global__ void
@@ -434,12 +429,12 @@ radon::forward_cuda_3d<float>(const float* x,
                               const int device);
 
 template void
-radon::forward_cuda_3d<unsigned short>(const unsigned short* x,
-                                       const float* angles,
-                                       unsigned short* y,
-                                       TextureCache& tex_cache,
-                                       const VolumeCfg& vol_cfg,
-                                       const ProjectionCfg& proj_cfg,
-                                       const ExecCfg& exec_cfg,
-                                       const int batch_size,
-                                       const int device);
+radon::forward_cuda_3d<__half>(const __half* x,
+                               const float* angles,
+                               __half* y,
+                               TextureCache& tex_cache,
+                               const VolumeCfg& vol_cfg,
+                               const ProjectionCfg& proj_cfg,
+                               const ExecCfg& exec_cfg,
+                               const int batch_size,
+                               const int device);

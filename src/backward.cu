@@ -142,34 +142,28 @@ radon::backward_cuda(const T* x,
   dim3 grid_dim = exec_cfg.get_grid_size(
     vol_cfg.width, vol_cfg.height, batch_size / channels);
 
-  // Invoke kernel
-  if (proj_cfg.projection_type == FANBEAM) {
-    if (channels == 1) {
-      backward_kernel<false, 1><<<grid_dim, block_dim>>>(
-        (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
-    } else {
-      if (is_float) {
-        backward_kernel<false, 4><<<grid_dim, block_dim>>>(
-          (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
-      } else {
-        backward_kernel<false, 4><<<grid_dim, block_dim>>>(
-          (__half*)y, tex->texture, angles, vol_cfg, proj_cfg);
-      }
+    switch (channels) {
+      case 1:
+        if (proj_cfg.projection_type == FANBEAM) {
+          backward_kernel<false, 1, T>
+            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
+        } else {
+          backward_kernel<true, 1, T>
+            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
+        }
+        break;
+      case 4:
+        if (proj_cfg.projection_type == FANBEAM) {
+          backward_kernel<false, 4, T>
+            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
+        } else {
+          backward_kernel<true, 4, T>
+            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
+        }
+        break;
+      default:
+        throw std::invalid_argument("This is an unsupported number of channels!");
     }
-  } else {
-    if (channels == 1) {
-      backward_kernel<true, 1><<<grid_dim, block_dim>>>(
-        (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
-    } else {
-      if (is_float) {
-        backward_kernel<true, 4><<<grid_dim, block_dim>>>(
-          (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
-      } else {
-        backward_kernel<true, 4><<<grid_dim, block_dim>>>(
-          (__half*)y, tex->texture, angles, vol_cfg, proj_cfg);
-      }
-    }
-  }
 }
 
 template void
@@ -184,15 +178,15 @@ radon::backward_cuda<float>(const float* x,
                             const int device);
 
 template void
-radon::backward_cuda<unsigned short>(const unsigned short* x,
-                                     const float* angles,
-                                     unsigned short* y,
-                                     TextureCache& tex_cache,
-                                     const VolumeCfg& vol_cfg,
-                                     const ProjectionCfg& proj_cfg,
-                                     const ExecCfg& exec_cfg,
-                                     const int batch_size,
-                                     const int device);
+radon::backward_cuda<__half>(const __half* x,
+                             const float* angles,
+                             __half* y,
+                             TextureCache& tex_cache,
+                             const VolumeCfg& vol_cfg,
+                             const ProjectionCfg& proj_cfg,
+                             const ExecCfg& exec_cfg,
+                             const int batch_size,
+                             const int device);
 
 template<int channels, typename T>
 __global__ void
@@ -351,12 +345,12 @@ radon::backward_cuda_3d<float>(const float* x,
                                const int device);
 
 template void
-radon::backward_cuda_3d<unsigned short>(const unsigned short* x,
-                                        const float* angles,
-                                        unsigned short* y,
-                                        TextureCache& tex_cache,
-                                        const VolumeCfg& vol_cfg,
-                                        const ProjectionCfg& proj_cfg,
-                                        const ExecCfg& exec_cfg,
-                                        const int batch_size,
-                                        const int device);
+radon::backward_cuda_3d<__half>(const __half* x,
+                                const float* angles,
+                                __half* y,
+                                TextureCache& tex_cache,
+                                const VolumeCfg& vol_cfg,
+                                const ProjectionCfg& proj_cfg,
+                                const ExecCfg& exec_cfg,
+                                const int batch_size,
+                                const int device);
