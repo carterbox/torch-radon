@@ -447,7 +447,6 @@ radon::forward_cuda_3d(const T* x,
   if (channels % 4 == 0) {
     texture_channels = 4;
   }
-  const int textures_per_batch = channels / texture_channels;
 
   Texture* tex = tex_cache.get({ device,
                                  vol_cfg.depth,
