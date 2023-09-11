@@ -1,3 +1,4 @@
+#include <cuda_fp16.h>
 #include <iostream>
 #include <math.h>
 #include <torch/extension.h>
@@ -96,9 +97,9 @@ radon_forward(torch::Tensor x,
     }
 
     if (x.dtype() == torch::kFloat16) {
-      radon::forward_cuda_3d((unsigned short*)x.data_ptr<at::Half>(),
+      radon::forward_cuda_3d((__half*)x.data_ptr<at::Half>(),
                              angles.data_ptr<float>(),
-                             (unsigned short*)y.data_ptr<at::Half>(),
+                             (__half*)y.data_ptr<at::Half>(),
                              tex_cache,
                              vol_cfg,
                              proj_cfg,
@@ -143,9 +144,9 @@ radon_forward(torch::Tensor x,
     }
 
     if (x.dtype() == torch::kFloat16) {
-      radon::forward_cuda((unsigned short*)x.data_ptr<at::Half>(),
+      radon::forward_cuda((__half*)x.data_ptr<at::Half>(),
                           angles.data_ptr<float>(),
-                          (unsigned short*)y.data_ptr<at::Half>(),
+                          (__half*)y.data_ptr<at::Half>(),
                           tex_cache,
                           vol_cfg,
                           proj_cfg,
@@ -197,9 +198,9 @@ radon_backward(torch::Tensor x,
       { batch_size, vol_cfg.depth, vol_cfg.height, vol_cfg.width }, options);
 
     if (dtype == torch::kFloat16) {
-      radon::backward_cuda_3d((unsigned short*)x.data_ptr<at::Half>(),
+      radon::backward_cuda_3d((__half*)x.data_ptr<at::Half>(),
                               angles.data_ptr<float>(),
-                              (unsigned short*)y.data_ptr<at::Half>(),
+                              (__half*)y.data_ptr<at::Half>(),
                               tex_cache,
                               vol_cfg,
                               proj_cfg,
@@ -223,9 +224,9 @@ radon_backward(torch::Tensor x,
       torch::empty({ batch_size, vol_cfg.height, vol_cfg.width }, options);
 
     if (dtype == torch::kFloat16) {
-      radon::backward_cuda((unsigned short*)x.data_ptr<at::Half>(),
+      radon::backward_cuda((__half*)x.data_ptr<at::Half>(),
                            angles.data_ptr<float>(),
-                           (unsigned short*)y.data_ptr<at::Half>(),
+                           (__half*)y.data_ptr<at::Half>(),
                            tex_cache,
                            vol_cfg,
                            proj_cfg,
@@ -329,35 +330,23 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
   });
 
   py::class_<TextureCache>(m, "TextureCache")
-    .
-
-    def(py::init<size_t>())
-
+    .def(py::init<size_t>())
     .def("free", &TextureCache::free);
 
   py::class_<FFTCache>(m, "FFTCache")
-    .
-
-    def(py::init<size_t>())
-
+    .def(py::init<size_t>())
     .def("free", &FFTCache::free);
 
   py::class_<RadonNoiseGenerator>(m, "RadonNoiseGenerator")
-    .
-
-    def(py::init<const uint>())
-
+    .def(py::init<const uint>())
     .def("set_seed",
-         (void (RadonNoiseGenerator::*)(const uint)) &
+         (void(RadonNoiseGenerator::*)(const uint)) &
            RadonNoiseGenerator::set_seed)
     .def("free", &RadonNoiseGenerator::free);
 
   py::class_<VolumeCfg>(m, "VolumeCfg")
-    .
-
-    def(
+    .def(
       py::init<int, int, int, float, float, float, float, float, float, bool>())
-
     .def_readonly("depth", &VolumeCfg::depth)
     .def_readonly("height", &VolumeCfg::height)
     .def_readonly("width", &VolumeCfg::width)
@@ -367,14 +356,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     .def_readonly("is_3d", &VolumeCfg::is_3d);
 
   py::class_<ProjectionCfg>(m, "ProjectionCfg")
-    .
-
-    def(py::init<int, float>())
-
-    .
-
-    def(py::init<int, float, int, float, float, float, float, float, int>())
-
+    .def(py::init<int, float>())
+    .def(py::init<int, float, int, float, float, float, float, float, int>())
     .def("is_2d", &ProjectionCfg::is_2d)
     .def("copy", &ProjectionCfg::copy)
     .def_readonly("projection_type", &ProjectionCfg::projection_type)
@@ -388,16 +371,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     .def_readwrite("initial_z", &ProjectionCfg::initial_z)
     .def_readwrite("n_angles", &ProjectionCfg::n_angles);
 
-  py::class_<ExecCfg>(m, "ExecCfg")
-    .
-
-    def(py::init<int, int, int, int>());
+  py::class_<ExecCfg>(m, "ExecCfg").def(py::init<int, int, int, int>());
 
   py::class_<symbolic::SymbolicFunction>(m, "SymbolicFunction")
-    .
-
-    def(py::init<float, float>())
-
+    .def(py::init<float, float>())
     .def("add_gaussian", &symbolic::SymbolicFunction::add_gaussian)
     .def("add_ellipse", &symbolic::SymbolicFunction::add_ellipse)
     .def("move", &symbolic::SymbolicFunction::move)

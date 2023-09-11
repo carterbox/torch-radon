@@ -203,62 +203,47 @@ radon::forward_cuda(const T* x,
   LOG_DEBUG("Grid Size x:" << grid_dim.x << " y:" << grid_dim.y
                            << " z:" << grid_dim.z);
 
-  if (proj_cfg.projection_type == FANBEAM) {
-    if (texture_channels == 1) {
-      forward_kernel<false, 1><<<grid_dim, block_dim>>>((float*)y,
-                                                        tex->texture,
-                                                        angles,
-                                                        vol_cfg,
-                                                        proj_cfg,
-                                                        angle_batch_size,
-                                                        channels);
-    } else {
-      if (is_float) {
-        forward_kernel<false, 4><<<grid_dim, block_dim>>>((float*)y,
-                                                          tex->texture,
-                                                          angles,
-                                                          vol_cfg,
-                                                          proj_cfg,
-                                                          angle_batch_size,
-                                                          channels);
+  switch (channels) {
+    case 1:
+      if (proj_cfg.projection_type == FANBEAM) {
+        forward_kernel<false, 1, T><<<grid_dim, block_dim>>>(y,
+                                                             tex->texture,
+                                                             angles,
+                                                             vol_cfg,
+                                                             proj_cfg,
+                                                             angle_batch_size,
+                                                             channels);
       } else {
-        forward_kernel<false, 4><<<grid_dim, block_dim>>>((__half*)y,
-                                                          tex->texture,
-                                                          angles,
-                                                          vol_cfg,
-                                                          proj_cfg,
-                                                          angle_batch_size,
-                                                          channels);
+        forward_kernel<true, 1, T><<<grid_dim, block_dim>>>(y,
+                                                            tex->texture,
+                                                            angles,
+                                                            vol_cfg,
+                                                            proj_cfg,
+                                                            angle_batch_size,
+                                                            channels);
       }
-    }
-  } else {
-    if (texture_channels == 1) {
-      forward_kernel<true, 1><<<grid_dim, block_dim>>>((float*)y,
-                                                       tex->texture,
-                                                       angles,
-                                                       vol_cfg,
-                                                       proj_cfg,
-                                                       angle_batch_size,
-                                                       channels);
-    } else {
-      if (is_float) {
-        forward_kernel<true, 4><<<grid_dim, block_dim>>>((float*)y,
-                                                         tex->texture,
-                                                         angles,
-                                                         vol_cfg,
-                                                         proj_cfg,
-                                                         angle_batch_size,
-                                                         channels);
+      break;
+    case 4:
+      if (proj_cfg.projection_type == FANBEAM) {
+        forward_kernel<false, 4, T><<<grid_dim, block_dim>>>(y,
+                                                             tex->texture,
+                                                             angles,
+                                                             vol_cfg,
+                                                             proj_cfg,
+                                                             angle_batch_size,
+                                                             channels);
       } else {
-        forward_kernel<true, 4><<<grid_dim, block_dim>>>((__half*)y,
-                                                         tex->texture,
-                                                         angles,
-                                                         vol_cfg,
-                                                         proj_cfg,
-                                                         angle_batch_size,
-                                                         channels);
+        forward_kernel<true, 4, T><<<grid_dim, block_dim>>>(y,
+                                                            tex->texture,
+                                                            angles,
+                                                            vol_cfg,
+                                                            proj_cfg,
+                                                            angle_batch_size,
+                                                            channels);
       }
-    }
+      break;
+    default:
+      throw std::invalid_argument("This is an unsupported number of channels!");
   }
 }
 
@@ -276,17 +261,17 @@ radon::forward_cuda<float>(const float* x,
                            const int angle_batch_size);
 
 template void
-radon::forward_cuda<unsigned short>(const unsigned short* x,
-                                    const float* angles,
-                                    unsigned short* y,
-                                    TextureCache& tex_cache,
-                                    const VolumeCfg& vol_cfg,
-                                    const ProjectionCfg& proj_cfg,
-                                    const ExecCfg& exec_cfg,
-                                    const int batch_size,
-                                    const int channels,
-                                    const int device,
-                                    const int angle_batch_size);
+radon::forward_cuda<__half>(const __half* x,
+                            const float* angles,
+                            __half* y,
+                            TextureCache& tex_cache,
+                            const VolumeCfg& vol_cfg,
+                            const ProjectionCfg& proj_cfg,
+                            const ExecCfg& exec_cfg,
+                            const int batch_size,
+                            const int channels,
+                            const int device,
+                            const int angle_batch_size);
 
 // Assumes a launch parameters as follows
 // The x number of threads across the grid equals the u dimension of the
@@ -487,17 +472,12 @@ radon::forward_cuda_3d(const T* x,
               proj_cfg.n_angles];
 
     // Invoke kernel
-    if (channels == 1) {
+    if (texture_channels == 1) {
       forward_kernel_3d<1><<<grid_dim, block_dim>>>(
         local_y, tex->texture, langles, vol_cfg, proj_cfg);
     } else {
-      if (is_float) {
-        forward_kernel_3d<4><<<grid_dim, block_dim>>>(
-          local_y, tex->texture, langles, vol_cfg, proj_cfg);
-      } else {
-        forward_kernel_3d<4><<<grid_dim, block_dim>>>(
-          (__half*)local_y, tex->texture, langles, vol_cfg, proj_cfg);
-      }
+      forward_kernel_3d<4><<<grid_dim, block_dim>>>(
+        local_y, tex->texture, langles, vol_cfg, proj_cfg);
     }
   }
 }
@@ -516,14 +496,14 @@ radon::forward_cuda_3d<float>(const float* x,
                               const int angle_batch_size);
 
 template void
-radon::forward_cuda_3d<unsigned short>(const unsigned short* x,
-                                       const float* angles,
-                                       unsigned short* y,
-                                       TextureCache& tex_cache,
-                                       const VolumeCfg& vol_cfg,
-                                       const ProjectionCfg& proj_cfg,
-                                       const ExecCfg& exec_cfg,
-                                       const int batch_size,
-                                       const int channels,
-                                       const int device,
-                                       const int angle_batch_size);
+radon::forward_cuda_3d<__half>(const __half* x,
+                               const float* angles,
+                               __half* y,
+                               TextureCache& tex_cache,
+                               const VolumeCfg& vol_cfg,
+                               const ProjectionCfg& proj_cfg,
+                               const ExecCfg& exec_cfg,
+                               const int batch_size,
+                               const int channels,
+                               const int device,
+                               const int angle_batch_size);

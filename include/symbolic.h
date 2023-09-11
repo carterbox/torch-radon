@@ -6,7 +6,8 @@
 
 namespace symbolic {
 
-struct Gaussian {
+struct Gaussian
+{
   float k;
   float cx;
   float cy;
@@ -21,7 +22,8 @@ struct Gaussian {
   void scale(float sx, float sy);
 };
 
-struct Ellipse {
+struct Ellipse
+{
   float k;
   float cx;
   float cy;
@@ -39,7 +41,8 @@ struct Ellipse {
   void scale(float sx, float sy);
 };
 
-class SymbolicFunction {
+class SymbolicFunction
+{
   std::vector<Gaussian> gaussians;
   std::vector<Ellipse> ellipses;
 
@@ -59,11 +62,15 @@ public:
 
   float max_distance_from_origin() const;
 
-  void discretize(float *data, int h, int w) const;
+  void discretize(float* data, int h, int w) const;
   float line_integral(float s_x, float s_y, float e_x, float e_y) const;
 };
 
-void forward(const SymbolicFunction &f, const ProjectionCfg &proj,
-             const float *angles, const int n_angles, float *sinogram);
+void
+forward(const SymbolicFunction& f,
+        const ProjectionCfg& proj,
+        const float* angles,
+        const int n_angles,
+        float* sinogram);
 
 } // namespace symbolic
