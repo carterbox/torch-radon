@@ -1,46 +1,107 @@
 import torch
-from torch.autograd import Function
 
 from . import cuda_backend
 
 
-class RadonForward(Function):
+class RadonForward(torch.autograd.Function):
+    """Perform the forward Radon transformtion from real to sinogram space."""
+
     @staticmethod
-    def forward(ctx, x, angles, tex_cache, vol_cfg, proj_cfg, exec_cfg_generator, exec_cfg=None):
-        exec_cfg = exec_cfg_generator(vol_cfg, proj_cfg,  x.dtype == torch.half) if exec_cfg is None else exec_cfg
-        sinogram = cuda_backend.forward(x, angles, tex_cache, vol_cfg, proj_cfg, exec_cfg)
+    def forward(
+        ctx,
+        image: torch.Tensor,
+        angles: torch.Tensor,
+        tex_cache: cuda_backend.TextureCache,
+        vol_cfg: cuda_backend.VolumeCfg,
+        proj_cfg: cuda_backend.ProjectionCfg,
+        exec_cfg: cuda_backend.ExecCfg = None,
+    ):
+        exec_cfg = cuda_backend.ExecCfg(
+            16,
+            16,
+            1,
+            1,
+        ) if exec_cfg is None else exec_cfg
+        sinogram = cuda_backend.forward(
+            image,
+            angles,
+            tex_cache,
+            vol_cfg,
+            proj_cfg,
+            exec_cfg,
+        )
+        ctx.save_for_backward(angles)
         ctx.tex_cache = tex_cache
         ctx.vol_cfg = vol_cfg
         ctx.proj_cfg = proj_cfg.copy()
-        ctx.exec_cfg_generator = exec_cfg_generator
-        ctx.save_for_backward(angles)
+        ctx.exec_cfg = exec_cfg
 
         return sinogram
 
     @staticmethod
-    def backward(ctx, grad_x):
+    def backward(
+        ctx,
+        grad_sinogram: torch.Tensor,
+    ):
         angles, = ctx.saved_tensors
-        exec_cfg = ctx.exec_cfg_generator(ctx.vol_cfg, ctx.proj_cfg, grad_x.dtype == torch.half)
-        grad = cuda_backend.backward(grad_x, angles, ctx.tex_cache, ctx.vol_cfg, ctx.proj_cfg, exec_cfg)
-        return grad, None, None, None, None, None, None
+        grad_image = cuda_backend.backward(
+            grad_sinogram,
+            angles,
+            ctx.tex_cache,
+            ctx.vol_cfg,
+            ctx.proj_cfg,
+            ctx.exec_cfg,
+        )
+        return grad_image, None, None, None, None, None, None
 
 
-class RadonBackprojection(Function):
+class RadonBackprojection(torch.autograd.Function):
+    """Perform the adjoint Radon transformation from sinogram to real space."""
+
     @staticmethod
-    def forward(ctx, x, angles, tex_cache, vol_cfg, proj_cfg, exec_cfg_generator, exec_cfg=None):
-        exec_cfg = exec_cfg_generator(vol_cfg, proj_cfg,  x.dtype == torch.half) if exec_cfg is None else exec_cfg
-        image = cuda_backend.backward(x, angles, tex_cache,  vol_cfg, proj_cfg, exec_cfg)
+    def forward(
+        ctx,
+        sinogram: torch.Tensor,
+        angles: torch.Tensor,
+        tex_cache: cuda_backend.TextureCache,
+        vol_cfg: cuda_backend.VolumeCfg,
+        proj_cfg: cuda_backend.ProjectionCfg,
+        exec_cfg: cuda_backend.ExecCfg = None,
+    ):
+        exec_cfg = cuda_backend.ExecCfg(
+            16,
+            16,
+            1,
+            1,
+        ) if exec_cfg is None else exec_cfg
+        image = cuda_backend.backward(
+            sinogram,
+            angles,
+            tex_cache,
+            vol_cfg,
+            proj_cfg,
+            exec_cfg,
+        )
+        ctx.save_for_backward(angles)
         ctx.tex_cache = tex_cache
         ctx.vol_cfg = vol_cfg
         ctx.proj_cfg = proj_cfg.copy()
-        ctx.exec_cfg_generator = exec_cfg_generator
-        ctx.save_for_backward(angles)
+        ctx.exec_cfg = exec_cfg
 
         return image
 
     @staticmethod
-    def backward(ctx, grad_x):
+    def backward(
+        ctx,
+        grad_image: torch.Tensor,
+    ):
         angles, = ctx.saved_tensors
-        exec_cfg = ctx.exec_cfg_generator(ctx.vol_cfg, ctx.proj_cfg, grad_x.dtype == torch.half)
-        grad = cuda_backend.forward(grad_x, angles, ctx.tex_cache, ctx.vol_cfg, ctx.proj_cfg, exec_cfg)
-        return grad, None, None, None, None, None, None
+        grad_sinogram = cuda_backend.forward(
+            grad_image,
+            angles,
+            ctx.tex_cache,
+            ctx.vol_cfg,
+            ctx.proj_cfg,
+            ctx.exec_cfg,
+        )
+        return grad_sinogram, None, None, None, None, None, None
