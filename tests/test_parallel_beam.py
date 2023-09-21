@@ -2,8 +2,11 @@ import numpy as np
 import torch
 import pytest
 import random
+import itertools
 
 import torch_radon
+
+torch_radon.cuda_backend.set_log_level(0)
 
 from .utils import random_symbolic_function, symbolic_discretize, symbolic_forward, TestHelper, assert_equal
 
@@ -31,21 +34,25 @@ for height, width in [(128, 256), (256, 128), (75, 149), (81, 81)]:
 
 # change volume scale and center
 for center in [(0, 0), (17, -25), (53, 49)]:
-    for voxel_size in [(1, 1), (0.75, 0.75), (1.5, 1.5), (0.7, 1.3), (1.3, 0.7)]:
-        det_count = int(179 * max(voxel_size[0], 1) * max(voxel_size[1], 1) * np.sqrt(2))
+    for voxel_size in [(1, 1), (0.75, 0.75), (1.5, 1.5), (0.7, 1.3),
+                       (1.3, 0.7)]:
+        det_count = int(179 * max(voxel_size[0], 1) * max(voxel_size[1], 1) *
+                        np.sqrt(2))
         volume = torch_radon.volumes.Volume2D(center, voxel_size)
         volume.set_size(179, 123)
         params.append((4, (0, np.pi, 128), volume, 2.0, det_count))
 
 for spacing in [1.0, 0.5, 1.3, 2.0]:
     for det_count in [79, 128, 243]:
-        for src_dist, det_dist in [(128, 128), (64, 128), (128, 64), (503, 503)]:
+        for src_dist, det_dist in [(128, 128), (64, 128), (128, 64),
+                                   (503, 503)]:
             volume = torch_radon.volumes.Volume2D()
             volume.set_size(128, 128)
             params.append((4, (0, np.pi, 128), volume, spacing, det_count))
 
 
-@pytest.mark.parametrize('batch_size, angles, volume, spacing, det_count', params)
+@pytest.mark.parametrize('batch_size, angles, volume, spacing, det_count',
+                         params)
 def test_error(batch_size, angles, volume, spacing, det_count):
     if volume is None:
         volume = torch_radon.volumes.Volume2D()
@@ -61,7 +68,8 @@ def test_error(batch_size, angles, volume, spacing, det_count):
 
     tx = torch.FloatTensor(x).unsqueeze(0).repeat(batch_size, 1, 1).to(device)
 
-    y = symbolic_forward(f, radon.angles.cpu(), radon.projection.cfg).cpu().numpy()
+    y = symbolic_forward(f, radon.angles.cpu(),
+                         radon.projection.cfg).cpu().numpy()
     ty = radon.forward(tx)
     assert_equal(ty.size(0), batch_size)
 
@@ -96,7 +104,6 @@ def test_simple_integrals(image_size=17):
     )
     radon = torch_radon.ParallelBeam(
         volume=volume,
-        angles=angles,
         det_spacing=1.0,
         det_count=image_size,
     )
@@ -110,7 +117,7 @@ def test_simple_integrals(image_size=17):
     original[image_size // 4, :] += 1
     original[:, image_size // 2] += 1
 
-    data = radon.forward(original)
+    data = radon.forward(original, angles)
     data0 = torch.sum(original, axis=0)
     data1 = torch.sum(original, axis=1)
 
@@ -125,6 +132,91 @@ def test_simple_integrals(image_size=17):
     print('\n', data[3].cpu().numpy())
     torch.testing.assert_allclose(data[2], data1)
     torch.testing.assert_allclose(data[3], torch.flip(data1, (0, )))
+
+
+def manual_integrals(x):
+
+    angles = torch.tensor(
+        [
+            [0, 0],
+            [0, -torch.pi / 2],
+            [-torch.pi / 2, 0],
+            [-torch.pi / 2, -torch.pi / 2],
+        ],
+    ).float()
+
+    integrals = torch.empty((*x.shape[:-2], 2, x.shape[-1]),
+                            dtype=x.dtype,
+                            layout=x.layout,
+                            device=x.device)
+
+    for b in range(x.shape[0]):
+        if b % 4 == 0:
+            integrals[b, :, 0, :] = torch.sum(x[b], dim=-2)  # pi
+            integrals[b, :, 1, :] = torch.sum(x[b], dim=-2)  # pi
+        if b % 4 == 1:
+            integrals[b, :, 0, :] = torch.sum(x[b], dim=-2)  # pi
+            integrals[b, :, 1, :] = torch.sum(x[b], dim=-1)  # pi/2
+        if b % 4 == 2:
+            integrals[b, :, 0, :] = torch.sum(x[b], dim=-1)  # pi/2
+            integrals[b, :, 1, :] = torch.sum(x[b], dim=-2)  # pi
+        if b % 4 == 3:
+            integrals[b, :, 0, :] = torch.sum(x[b], dim=-1)  # pi/2
+            integrals[b, :, 1, :] = torch.sum(x[b], dim=-1)  # pi/2
+
+    assert integrals.shape == (*x.shape[:-2], 2, x.shape[-1])
+
+    return angles, integrals
+
+
+@pytest.mark.parametrize(
+    'batch,channel,dtype',
+    itertools.product(
+        [
+            1, 3, 4, 8,
+        ],
+        [
+            1, 3, 4, 8,
+        ],
+        [
+            'float',
+        ],
+    ),
+)
+def test_complex_integrals(batch, channel, dtype):
+
+    image_size = 3
+    convert = dict(float=torch.float, half=torch.half)
+
+    x = torch.arange(0, batch * channel * image_size * image_size).reshape(
+        batch, channel, image_size, image_size).type(convert[dtype])
+    # for c in range(x.shape[1]):
+    #     x[:, c] = c+1
+
+    angles, integrals = manual_integrals(x)
+
+    x = x.to('cuda')
+    angles = angles.to('cuda')
+
+    volume = torch_radon.volumes.Volume2D()
+    volume.set_size(image_size, image_size)
+
+    radon = torch_radon.ParallelBeam(
+        volume=volume,
+        det_spacing=1.0,
+        det_count=image_size,
+    )
+    data = radon.forward(x, angles=angles).to('cpu')
+
+    print()
+    print('integrals - radon')
+    for b in range(batch):
+        for c in range(channel):
+            print(f"batch: {b}, channel: {c}")
+            for a in range(2):
+                print(f"  {integrals[b, c, a]} - {data[b, c, a]}")
+    assert data.shape == integrals.shape
+    assert torch.equal(data, integrals)
 
 
 def test_simple_back(image_size=5):

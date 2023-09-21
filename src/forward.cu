@@ -21,27 +21,26 @@ forward_kernel(T* __restrict__ output,
                const VolumeCfg vol_cfg,
                const ProjectionCfg proj_cfg,
                const int angle_batch_size,
+               const int n_angles,
                const int real_channels)
 {
 
   // Calculate sinogram coordinates
   const int ray_id = blockIdx.x * blockDim.x + threadIdx.x;
   const int angle_id = blockIdx.y * blockDim.y + threadIdx.y;
-  // batch_id is actually combination of batches and real_channels
-  const int batch_id = blockIdx.z * blockDim.z + threadIdx.z;
-  const int angle_offset =
-    proj_cfg.n_angles *
-    ((batch_id / real_channels * texture_channels) % angle_batch_size);
+  const int texture_id = blockIdx.z * blockDim.z + threadIdx.z;
+  const int batch_id = texture_id * texture_channels / real_channels;
+  const int angle_offset = n_angles * (batch_id % angle_batch_size);
 
   // Assuming the output dimensions are (batch, channel, angle, ray)
   // base is the the memory location which starts a multi-channel sinograms
   const int base =
     ray_id + proj_cfg.det_count_u *
-               (angle_id + proj_cfg.n_angles * (batch_id * texture_channels));
+               (angle_id + n_angles * (texture_id * texture_channels));
   // mem_pitch is the memory stride between channels
-  const int mem_pitch = proj_cfg.det_count_u * proj_cfg.n_angles;
+  const int mem_pitch = proj_cfg.det_count_u * n_angles;
 
-  if (angle_id < proj_cfg.n_angles && ray_id < proj_cfg.det_count_u) {
+  if (angle_id < n_angles && ray_id < proj_cfg.det_count_u) {
     float accumulator[texture_channels];
 
 #pragma unroll
@@ -131,9 +130,9 @@ forward_kernel(T* __restrict__ output,
 #pragma unroll(4)
     for (int j = 0; j < n_steps; j++) {
       if (texture_channels == 1) {
-        accumulator[0] += tex2DLayered<float>(texture, rsx, rsy, batch_id);
+        accumulator[0] += tex2DLayered<float>(texture, rsx, rsy, texture_id);
       } else {
-        float4 read = tex2DLayered<float4>(texture, rsx, rsy, batch_id);
+        float4 read = tex2DLayered<float4>(texture, rsx, rsy, texture_id);
         accumulator[0] += read.x;
         accumulator[1] += read.y;
         accumulator[2] += read.z;
@@ -161,7 +160,8 @@ radon::forward_cuda(const T* x,
                     const int batch_size,
                     const int channels,
                     const int device,
-                    const int angle_batch_size)
+                    const int angle_batch_size,
+                    const int n_angles)
 {
   constexpr bool is_float = std::is_same<T, float>::value;
   constexpr int precision = is_float ? PRECISION_FLOAT : PRECISION_HALF;
@@ -170,7 +170,7 @@ radon::forward_cuda(const T* x,
                                          << " width: " << vol_cfg.width
                                          << " channels: " << channels);
   LOG_DEBUG("Radon forward 2D. Det count: "
-            << proj_cfg.det_count_u << " angles: " << proj_cfg.n_angles
+            << proj_cfg.det_count_u << " angles: " << n_angles
             << " angles_batch_size: " << angle_batch_size
             << " batch_size: " << batch_size);
 
@@ -181,21 +181,24 @@ radon::forward_cuda(const T* x,
   if (channels % 4 == 0) {
     texture_channels = 4;
   }
+  if (texture_channels > 4) {
+    throw std::invalid_argument("This more than 4 channels is unsupported!");
+  }
   const int grid_size_z = batch_size * channels / texture_channels;
 
   // copy x into CUDA Array (allocating it if needed) and bind to texture
-  Texture* tex = tex_cache.get({ device,
-                                 grid_size_z,
-                                 vol_cfg.height,
-                                 vol_cfg.width,
-                                 true,
-                                 texture_channels,
-                                 precision });
+  Texture* tex = tex_cache.get(TextureConfig(device,
+                                             grid_size_z,
+                                             vol_cfg.height,
+                                             vol_cfg.width,
+                                             true,
+                                             texture_channels,
+                                             precision));
   tex->put(x);
 
   // Invoke kernel
-  const dim3 grid_dim = exec_cfg.get_grid_size(
-    proj_cfg.det_count_u, proj_cfg.n_angles, grid_size_z);
+  const dim3 grid_dim =
+    exec_cfg.get_grid_size(proj_cfg.det_count_u, n_angles, grid_size_z);
   const dim3 block_dim = exec_cfg.get_block_dim();
 
   LOG_DEBUG("Block Size x:" << block_dim.x << " y:" << block_dim.y
@@ -203,7 +206,7 @@ radon::forward_cuda(const T* x,
   LOG_DEBUG("Grid Size x:" << grid_dim.x << " y:" << grid_dim.y
                            << " z:" << grid_dim.z);
 
-  switch (channels) {
+  switch (texture_channels) {
     case 1:
       if (proj_cfg.projection_type == FANBEAM) {
         forward_kernel<false, 1, T><<<grid_dim, block_dim>>>(y,
@@ -212,6 +215,7 @@ radon::forward_cuda(const T* x,
                                                              vol_cfg,
                                                              proj_cfg,
                                                              angle_batch_size,
+                                                             n_angles,
                                                              channels);
       } else {
         forward_kernel<true, 1, T><<<grid_dim, block_dim>>>(y,
@@ -220,6 +224,7 @@ radon::forward_cuda(const T* x,
                                                             vol_cfg,
                                                             proj_cfg,
                                                             angle_batch_size,
+                                                            n_angles,
                                                             channels);
       }
       break;
@@ -231,6 +236,7 @@ radon::forward_cuda(const T* x,
                                                              vol_cfg,
                                                              proj_cfg,
                                                              angle_batch_size,
+                                                             n_angles,
                                                              channels);
       } else {
         forward_kernel<true, 4, T><<<grid_dim, block_dim>>>(y,
@@ -239,11 +245,13 @@ radon::forward_cuda(const T* x,
                                                             vol_cfg,
                                                             proj_cfg,
                                                             angle_batch_size,
+                                                            n_angles,
                                                             channels);
       }
       break;
     default:
-      throw std::invalid_argument("This is an unsupported number of channels!");
+      throw std::invalid_argument(
+        "This is an unsupported number of texture channels!");
   }
 }
 
@@ -258,7 +266,8 @@ radon::forward_cuda<float>(const float* x,
                            const int batch_size,
                            const int channels,
                            const int device,
-                           const int angle_batch_size);
+                           const int angle_batch_size,
+                           const int n_angles);
 
 template void
 radon::forward_cuda<__half>(const __half* x,
@@ -271,7 +280,8 @@ radon::forward_cuda<__half>(const __half* x,
                             const int batch_size,
                             const int channels,
                             const int device,
-                            const int angle_batch_size);
+                            const int angle_batch_size,
+                            const int n_angles);
 
 // Assumes a launch parameters as follows
 // The x number of threads across the grid equals the u dimension of the
@@ -284,7 +294,8 @@ forward_kernel_3d(T* __restrict__ output,
                   cudaTextureObject_t texture,
                   const float* __restrict__ angles,
                   const VolumeCfg vol_cfg,
-                  const ProjectionCfg proj_cfg)
+                  const ProjectionCfg proj_cfg,
+                  const int n_angles)
 {
   // Calculate sensor coordinates in pixels
   // TODO is there an "optimal" map from thread to coordinates that maximizes
@@ -299,10 +310,9 @@ forward_kernel_3d(T* __restrict__ output,
   const uint index =
     (angle_id * proj_cfg.det_count_v + pv) * proj_cfg.det_count_u + pu;
   // mem_pitch is the memory stride between channels
-  const uint mem_pitch =
-    proj_cfg.n_angles * proj_cfg.det_count_v * proj_cfg.det_count_u;
+  const uint mem_pitch = n_angles * proj_cfg.det_count_v * proj_cfg.det_count_u;
 
-  if (angle_id < proj_cfg.n_angles && pu < proj_cfg.det_count_u &&
+  if (angle_id < n_angles && pu < proj_cfg.det_count_u &&
       pv < proj_cfg.det_count_v) {
     // define accumulator
     float accumulator[channels];
@@ -435,7 +445,8 @@ radon::forward_cuda_3d(const T* x,
                        const int batch_size,
                        const int channels,
                        const int device,
-                       const int angle_batch_size)
+                       const int angle_batch_size,
+                       const int n_angles)
 {
   constexpr bool is_float = std::is_same<T, float>::value;
   constexpr int precision = is_float ? PRECISION_FLOAT : PRECISION_HALF;
@@ -457,26 +468,25 @@ radon::forward_cuda_3d(const T* x,
                                  precision });
 
   const dim3 grid_dim = exec_cfg.get_grid_size(
-    proj_cfg.det_count_u, proj_cfg.n_angles, proj_cfg.det_count_v);
+    proj_cfg.det_count_u, n_angles, proj_cfg.det_count_v);
   const dim3 block_dim = exec_cfg.get_block_dim();
 
   for (int kernel_start = 0; kernel_start < batch_size * channels;
        kernel_start += texture_channels) {
-    T* local_y = &y[kernel_start * (proj_cfg.det_count_u *
-                                    proj_cfg.det_count_v * proj_cfg.n_angles)];
+    T* local_y = &y[kernel_start *
+                    (proj_cfg.det_count_u * proj_cfg.det_count_v * n_angles)];
     tex->put(
       &x[kernel_start * (vol_cfg.depth * vol_cfg.height * vol_cfg.width)]);
     const float* langles =
-      &angles[((kernel_start / channels) % angle_batch_size) *
-              proj_cfg.n_angles];
+      &angles[((kernel_start / channels) % angle_batch_size) * n_angles];
 
     // Invoke kernel
     if (texture_channels == 1) {
       forward_kernel_3d<1><<<grid_dim, block_dim>>>(
-        local_y, tex->texture, langles, vol_cfg, proj_cfg);
+        local_y, tex->texture, langles, vol_cfg, proj_cfg, n_angles);
     } else {
       forward_kernel_3d<4><<<grid_dim, block_dim>>>(
-        local_y, tex->texture, langles, vol_cfg, proj_cfg);
+        local_y, tex->texture, langles, vol_cfg, proj_cfg, n_angles);
     }
   }
 }
@@ -492,7 +502,8 @@ radon::forward_cuda_3d<float>(const float* x,
                               const int batch_size,
                               const int channels,
                               const int device,
-                              const int angle_batch_size);
+                              const int angle_batch_size,
+                              const int n_angles);
 
 template void
 radon::forward_cuda_3d<__half>(const __half* x,
@@ -505,4 +516,5 @@ radon::forward_cuda_3d<__half>(const __half* x,
                                const int batch_size,
                                const int channels,
                                const int device,
-                               const int angle_batch_size);
+                               const int angle_batch_size,
+                               const int n_angles);

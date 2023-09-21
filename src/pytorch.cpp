@@ -55,7 +55,7 @@ radon_forward(torch::Tensor x,
               torch::Tensor angles,
               TextureCache& tex_cache,
               const VolumeCfg vol_cfg,
-              const ProjectionCfg proj_cfg,
+              ProjectionCfg proj_cfg,
               const ExecCfg exec_cfg)
 {
   CHECK_INPUT(x);
@@ -63,7 +63,9 @@ radon_forward(torch::Tensor x,
 
   int batch_size;
   int channels;
-  const int n_angles = angles.size(0);
+  const int n_angles = angles.size(-1);
+  proj_cfg.n_angles = n_angles;  // FIXME: This is a hack that should be refactored away
+  const int n_angles_batch = angles.dim() == 2 ? angles.size(-2) : 1;
   auto options = torch::TensorOptions().dtype(x.dtype()).device(x.device());
   torch::Tensor y;
 
@@ -107,7 +109,8 @@ radon_forward(torch::Tensor x,
                              batch_size,
                              channels,
                              x.device().index(),
-                             1);
+                             1,
+                             n_angles);
     } else {
       radon::forward_cuda_3d(x.data_ptr<float>(),
                              angles.data_ptr<float>(),
@@ -119,7 +122,8 @@ radon_forward(torch::Tensor x,
                              batch_size,
                              channels,
                              x.device().index(),
-                             1);
+                             1,
+                             n_angles);
     }
     return y;
   } else {
@@ -154,7 +158,8 @@ radon_forward(torch::Tensor x,
                           batch_size,
                           channels,
                           x.device().index(),
-                          1);
+                          n_angles_batch,
+                          n_angles);
     } else {
       radon::forward_cuda(x.data_ptr<float>(),
                           angles.data_ptr<float>(),
@@ -166,7 +171,8 @@ radon_forward(torch::Tensor x,
                           batch_size,
                           channels,
                           x.device().index(),
-                          1);
+                          n_angles_batch,
+                          n_angles);
     }
     return y;
   }
