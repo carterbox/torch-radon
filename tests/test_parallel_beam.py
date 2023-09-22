@@ -263,7 +263,7 @@ def manual_back(s):
         ],
         [
             'float',
-            # 'half',
+            'half',
         ],
     ),
 )
