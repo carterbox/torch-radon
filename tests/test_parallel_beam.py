@@ -19,10 +19,10 @@ params = []
 
 # check different batch sizes
 for batch_size in [1, 3, 17, 32]:
-    params.append((batch_size, (0, np.pi, 128), None, 1.0, 128))
+    params.append((batch_size, torch.linspace(0, np.pi, 128), None, 1.0, 128))
 
 # check few and many angles which are not multiples of 16
-for angles in [(0, np.pi, 19), (0, np.pi, 803)]:
+for angles in [torch.linspace(0, np.pi, 19), torch.linspace(0, np.pi, 803)]:
     params.append((4, angles, None, 1.0, 128))
 
 # change volume size
@@ -30,7 +30,7 @@ for height, width in [(128, 256), (256, 128), (75, 149), (81, 81)]:
     s = max(height, width)
     volume = torch_radon.volumes.Volume2D()
     volume.set_size(height, width)
-    params.append((4, (0, np.pi, 64), volume, 2.0, s))
+    params.append((4, torch.linspace(0, np.pi, 64), volume, 2.0, s))
 
 # change volume scale and center
 for center in [(0, 0), (17, -25), (53, 49)]:
@@ -40,7 +40,7 @@ for center in [(0, 0), (17, -25), (53, 49)]:
                         np.sqrt(2))
         volume = torch_radon.volumes.Volume2D(center, voxel_size)
         volume.set_size(179, 123)
-        params.append((4, (0, np.pi, 128), volume, 2.0, det_count))
+        params.append((4, torch.linspace(0, np.pi, 128), volume, 2.0, det_count))
 
 for spacing in [1.0, 0.5, 1.3, 2.0]:
     for det_count in [79, 128, 243]:
@@ -48,7 +48,7 @@ for spacing in [1.0, 0.5, 1.3, 2.0]:
                                    (503, 503)]:
             volume = torch_radon.volumes.Volume2D()
             volume.set_size(128, 128)
-            params.append((4, (0, np.pi, 128), volume, spacing, det_count))
+            params.append((4, torch.linspace(0, np.pi, 128), volume, spacing, det_count))
 
 
 @pytest.mark.parametrize('batch_size, angles, volume, spacing, det_count',
@@ -58,7 +58,8 @@ def test_error(batch_size, angles, volume, spacing, det_count):
         volume = torch_radon.volumes.Volume2D()
         volume.set_size(det_count, det_count)
 
-    radon = torch_radon.ParallelBeam(det_count, angles, spacing, volume)
+    radon = torch_radon.ParallelBeam(det_count, spacing, volume)
+    angles = angles.to(device)
 
     f = random_symbolic_function(radon.volume.height, radon.volume.width)
     x = symbolic_discretize(f, radon.volume.height, radon.volume.width)
@@ -68,9 +69,9 @@ def test_error(batch_size, angles, volume, spacing, det_count):
 
     tx = torch.FloatTensor(x).unsqueeze(0).repeat(batch_size, 1, 1).to(device)
 
-    y = symbolic_forward(f, radon.angles.cpu(),
+    y = symbolic_forward(f, angles.cpu(),
                          radon.projection.cfg).cpu().numpy()
-    ty = radon.forward(tx)
+    ty = radon.forward(tx, angles)
     assert_equal(ty.size(0), batch_size)
 
     max_error = 2e-3 * (512 / y.shape[0]) * (512 / y.shape[1])
@@ -79,10 +80,10 @@ def test_error(batch_size, angles, volume, spacing, det_count):
     test_helper.compare_images(y, ty, max_error, description)
 
     back_max_error = 1e-3
-    test_helper.backward_check(tx, ty, radon, description, back_max_error)
+    test_helper.backward_check(tx, ty, radon, description, back_max_error, angles)
 
     if batch_size % 4 == 0:
-        ty = radon.forward(tx.half())
+        ty = radon.forward(tx.half(), angles)
 
         description = f"Angles: {angles}\nVolume: {volume}\nSpacing: {spacing}, Count: {det_count}, Precision: half"
         test_helper.compare_images(y, ty, max_error, description)
@@ -233,12 +234,11 @@ def test_simple_back(image_size=5):
     )
     radon = torch_radon.ParallelBeam(
         volume=volume,
-        angles=angles,
         det_spacing=1.0,
         det_count=image_size,
     )
 
-    original = radon.backward(data)
+    original = radon.backward(data, angles)
     print('\n', original)
 
     ref = torch.tensor(
