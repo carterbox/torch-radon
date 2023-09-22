@@ -179,7 +179,7 @@ def manual_integrals(x):
             1, 3, 4, 8,
         ],
         [
-            'float',
+            'float', 'half',
         ],
     ),
 )

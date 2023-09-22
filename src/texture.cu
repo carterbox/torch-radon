@@ -35,11 +35,15 @@ TextureConfig::operator==(const TextureConfig& o) const
 TextureType
 TextureConfig::get_texture_type() const
 {
-  if (this->is_layered && this->height == 0)
+  // FIXME: Add a docstring which explains exactly what makes each texture type.
+  if (is_layered && depth == 0 && height >= 0 && width > 0)
     return TEX_1D_LAYERED;
-  if (this->is_layered)
+  if (is_layered && depth >= 0 && height > 0 && width > 0)
     return TEX_2D_LAYERED;
-  return TEX_3D;
+  if (!is_layered && depth > 0 && height > 0 && width > 0)
+    return TEX_3D;
+  throw std::invalid_argument(
+    "This TextureConfig does not match any TextureType!");
 }
 
 TextureConfig
@@ -49,7 +53,7 @@ create_1Dlayered_texture_config(int device,
                                 int channels,
                                 int precision)
 {
-  return TextureConfig(device, layers, 0, size, true, channels, precision);
+  return TextureConfig(device, 0, layers, size, true, channels, precision);
 }
 
 std::ostream&
@@ -66,15 +70,15 @@ operator<<(std::ostream& os, TextureConfig const& m)
 /// Assume data ordered        (height, channel, width) for 1D layered
 /// Assume data ordered (depth, channel, height, width) for 2D layered
 /// Assume data ordered (channel, depth, height, width) for 3D
-template<int texture_type, typename T>
+template<int texture_type, typename T, typename D>
 __global__ void
-write_to_surface(const float* data,
+write_to_surface(const D* data,
                  cudaSurfaceObject_t surface,
                  const int width,
                  const int height,
                  const int depth)
 {
-  constexpr int channels = sizeof(T) / 4;
+  constexpr int channels = sizeof(T) / sizeof(D);
   static_assert(std::is_same<T, float1>::value ||
                   std::is_same<T, float2>::value ||
                   std::is_same<T, float4>::value,
@@ -113,27 +117,19 @@ write_to_surface(const float* data,
             break;
         }
 
-        T tmp;
-        if constexpr (channels >= 1) {
-          tmp.x = data[0 * pitch + offset];
-        }
-        if constexpr (channels >= 2) {
-          tmp.y = data[1 * pitch + offset];
-        }
-        if constexpr (channels == 4) {
-          tmp.z = data[2 * pitch + offset];
-          tmp.w = data[3 * pitch + offset];
-        }
+        D tmp[channels];
+        for (int i = 0; i < channels; i++)
+          tmp[i] = data[i * pitch + offset];
 
         switch (texture_type) {
           case TEX_1D_LAYERED:
-            surf1DLayeredwrite<T>(tmp, surface, x * sizeof(T), y);
+            surf1DLayeredwrite<T>(*(T*)tmp, surface, x * sizeof(T), y);
             break;
           case TEX_2D_LAYERED:
-            surf2DLayeredwrite<T>(tmp, surface, x * sizeof(T), y, z);
+            surf2DLayeredwrite<T>(*(T*)tmp, surface, x * sizeof(T), y, z);
             break;
           case TEX_3D:
-            surf3Dwrite<T>(tmp, surface, x * sizeof(T), y, z);
+            surf3Dwrite<T>(*(T*)tmp, surface, x * sizeof(T), y, z);
             break;
         }
       }
@@ -141,60 +137,18 @@ write_to_surface(const float* data,
   }
 }
 
-template<int texture_type>
-__global__ void
-write_half_to_surface(const __half* data,
-                      cudaSurfaceObject_t surface,
-                      const int width,
-                      const int height,
-                      const int depth)
-{
-  const int x = blockIdx.x * blockDim.x + threadIdx.x;
-  const int y = blockIdx.y * blockDim.y + threadIdx.y;
-  const int z = blockIdx.z * blockDim.z + threadIdx.z;
-
-  if (x < width && y < height && z < depth) {
-    const int pitch = width * height * depth;
-    const int offset = (z * height + y) * width + x;
-
-    __half tmp[4];
-    for (int i = 0; i < 4; i++)
-      tmp[i] = data[i * pitch + offset];
-
-    switch (texture_type) {
-      case TEX_1D_LAYERED:
-        surf1DLayeredwrite<float2>(
-          *(float2*)tmp, surface, x * sizeof(float2), y);
-        break;
-      case TEX_2D_LAYERED:
-        surf2DLayeredwrite<float2>(
-          *(float2*)tmp, surface, x * sizeof(float2), y, z);
-        break;
-      case TEX_3D:
-        surf3Dwrite<float2>(*(float2*)tmp, surface, x * sizeof(float2), y, z);
-        break;
-    }
-  }
-}
-
 cudaChannelFormatDesc
 get_channel_desc(int channels, int precision)
 {
-  if (precision == PRECISION_FLOAT) {
-    if (channels == 1) {
-      return cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
-    }
-    if (channels == 4) {
-      return cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
-    }
+  int bitsPerChannel[4] = { 0, 0, 0, 0 };
+  for (int c = 0; c < channels; ++c) {
+    bitsPerChannel[c] = (precision == PRECISION_FLOAT) ? 32 : 16;
   }
-  if (precision == PRECISION_HALF && channels == 4) {
-    return cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat);
-  }
-
-  LOG_WARNING("Unsupported number of channels and precision (channels:"
-              << channels << ", precision: " << precision << ")");
-  return cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat);
+  return cudaCreateChannelDesc(bitsPerChannel[0],
+                               bitsPerChannel[1],
+                               bitsPerChannel[2],
+                               bitsPerChannel[3],
+                               cudaChannelFormatKindFloat);
 }
 
 Texture::Texture(TextureConfig c)
@@ -245,60 +199,32 @@ Texture::put(const float* data)
 
   checkCudaErrors(cudaSetDevice(this->cfg.device));
 
+  cudaMemcpy3DParms myparms = { 0 };
+
   // Pytorch (channel first) has a different memory order than CUDA textures
   // (channel last), so we have to use a special copy method when using
   // multiple channels
-  if (cfg.channels == 1) {
-    // if using a single channel use cudaMemcpy to copy data into array
-    cudaMemcpy3DParms myparms = { 0 };
-    myparms.srcPos = make_cudaPos(0, 0, 0);
-    myparms.dstPos = make_cudaPos(0, 0, 0);
-    myparms.srcPtr = make_cudaPitchedPtr(
-      (void*)data, cfg.width * sizeof(float), cfg.width, max(cfg.height, 1));
-    myparms.dstArray = this->array;
-
-    myparms.extent = make_cudaExtent(cfg.width, max(cfg.height, 1), cfg.depth);
-
-    myparms.kind = cudaMemcpyDeviceToDevice;
-    checkCudaErrors(cudaMemcpy3D(&myparms));
-  } else if (cfg.channels == 4) {
-    // else if using multiple channels use custom kernel to copy the data
-    int texture_type = cfg.get_texture_type();
-    if (texture_type == TEX_1D_LAYERED) {
-      dim3 grid_dim(roundup_div(cfg.width, 16), roundup_div(cfg.depth, 16));
-      LOG_DEBUG("[TORCH RADON] Copying 1D Texture " << this->cfg);
-      write_to_surface<TEX_1D_LAYERED, float4>
-        <<<grid_dim, dim3(16, 16)>>>(data,
-                                     this->surface,
-                                     max(cfg.width, 1),
-                                     max(cfg.height, 1),
-                                     max(cfg.depth, 1));
-    } else {
-      dim3 grid_dim(
-        roundup_div(cfg.width, 16), roundup_div(cfg.height, 16), cfg.depth);
-      if (texture_type == TEX_2D_LAYERED) {
-        LOG_DEBUG("[TORCH RADON] Copying 2D Texture " << this->cfg);
-        write_to_surface<TEX_2D_LAYERED, float4>
-          <<<dim3(1, 1, 1), dim3(1, 1, 1)>>>(data,
-                                             this->surface,
-                                             max(cfg.width, 1),
-                                             max(cfg.height, 1),
-                                             max(cfg.depth, 1));
-      } else {
-        LOG_DEBUG("[TORCH RADON] Copying 3D Texture " << this->cfg);
-        write_to_surface<TEX_3D, float4>
-          <<<grid_dim, dim3(16, 16)>>>(data,
-                                       this->surface,
-                                       max(cfg.width, 1),
-                                       max(cfg.height, 1),
-                                       max(cfg.depth, 1));
-      }
-    }
-#ifdef DEBUG
-    checkCudaErrors(cudaDeviceSynchronize());
-#endif
-  } else {
-    throw std::invalid_argument("There can only be 1 or 4 texture channels!");
+  switch (cfg.channels) {
+    case 1:
+      myparms.srcPos = make_cudaPos(0, 0, 0);
+      myparms.dstPos = make_cudaPos(0, 0, 0);
+      myparms.srcPtr = make_cudaPitchedPtr((void*)data,
+                                           cfg.width * sizeof(float),
+                                           max(cfg.width, 1),
+                                           max(cfg.height, 1));
+      myparms.dstArray = this->array;
+      myparms.extent = make_cudaExtent(
+        max(cfg.width, 1), max(cfg.height, 1), max(cfg.depth, 1));
+      myparms.kind = cudaMemcpyDeviceToDevice;
+      checkCudaErrors(cudaMemcpy3D(&myparms));
+      break;
+    case 2:
+      launchAccordingToSwitch<float2>(data);
+      break;
+    case 4:
+      // else if using multiple channels use custom kernel to copy the data
+      launchAccordingToSwitch<float4>(data);
+      break;
   }
 }
 
@@ -311,21 +237,78 @@ Texture::put(const __half* data)
 
   checkCudaErrors(cudaSetDevice(this->cfg.device));
 
-  int texture_type = cfg.get_texture_type();
-  if (texture_type == TEX_1D_LAYERED) {
-    dim3 grid_dim(roundup_div(cfg.width, 16), roundup_div(cfg.depth, 16));
-    write_half_to_surface<TEX_1D_LAYERED><<<grid_dim, dim3(16, 16)>>>(
-      (__half*)data, this->surface, cfg.width, cfg.depth, 1);
-  } else {
-    dim3 grid_dim(
-      roundup_div(cfg.width, 16), roundup_div(cfg.height, 16), cfg.depth);
-    if (texture_type == TEX_2D_LAYERED) {
-      write_half_to_surface<TEX_2D_LAYERED><<<grid_dim, dim3(16, 16)>>>(
-        (__half*)data, this->surface, cfg.width, cfg.height, cfg.depth);
-    } else {
-      write_half_to_surface<TEX_3D><<<grid_dim, dim3(16, 16)>>>(
-        (__half*)data, this->surface, cfg.width, cfg.height, cfg.depth);
-    }
+  cudaMemcpy3DParms myparms = { 0 };
+
+  switch (cfg.channels) {
+    case 1:
+      myparms.srcPos = make_cudaPos(0, 0, 0);
+      myparms.dstPos = make_cudaPos(0, 0, 0);
+      myparms.srcPtr = make_cudaPitchedPtr((void*)data,
+                                           cfg.width * sizeof(__half),
+                                           max(cfg.width, 1),
+                                           max(cfg.height, 1));
+      myparms.dstArray = this->array;
+      myparms.extent = make_cudaExtent(
+        max(cfg.width, 1), max(cfg.height, 1), max(cfg.depth, 1));
+      myparms.kind = cudaMemcpyDeviceToDevice;
+      checkCudaErrors(cudaMemcpy3D(&myparms));
+      break;
+    case 2:
+      launchAccordingToSwitch<float1>(data);
+      break;
+    case 4:
+      launchAccordingToSwitch<float2>(data);
+      break;
+  }
+}
+
+/**
+ * @brief A wrapper around the launch of writeToSurface which allows us to
+   instantiate more templates without repeated code
+ *
+ * @tparam T The type used during memory copy
+ * @tparam D The type of the data
+ * @param data
+ */
+template<typename T, typename D>
+void
+Texture::launchAccordingToSwitch(const D* data)
+{
+  const TextureType texture_type = cfg.get_texture_type();
+
+  dim3 grid_dim(
+    roundup_div(cfg.width, 16), roundup_div(cfg.height, 16), cfg.depth);
+
+  switch (texture_type) {
+
+    case TEX_1D_LAYERED:
+      write_to_surface<TEX_1D_LAYERED, T>
+        <<<grid_dim, dim3(16, 16)>>>(data,
+                                     this->surface,
+                                     max(cfg.width, 1),
+                                     max(cfg.height, 1),
+                                     max(cfg.depth, 1));
+      break;
+
+    case TEX_2D_LAYERED:
+      write_to_surface<TEX_2D_LAYERED, T>
+        <<<grid_dim, dim3(16, 16)>>>(data,
+                                     this->surface,
+                                     max(cfg.width, 1),
+                                     max(cfg.height, 1),
+                                     max(cfg.depth, 1));
+      break;
+
+    case TEX_3D:
+    default:
+      write_to_surface<TEX_3D, T>
+        <<<grid_dim, dim3(16, 16)>>>(data,
+                                     this->surface,
+                                     max(cfg.width, 1),
+                                     max(cfg.height, 1),
+                                     max(cfg.depth, 1));
+
+      break;
   }
 }
 
