@@ -45,7 +45,10 @@ backward_cuda(const T* x,
               const ProjectionCfg& proj_cfg,
               const ExecCfg& exec_cfg,
               const int batch_size,
-              const int device);
+              const int channels,
+              const int device,
+              const int angle_batch_size,
+              const int n_angles);
 
 template<typename T>
 void
@@ -57,6 +60,9 @@ backward_cuda_3d(const T* x,
                  const ProjectionCfg& proj_cfg,
                  const ExecCfg& exec_cfg,
                  const int batch_size,
-                 const int device);
+                 const int channels,
+                 const int device,
+                 const int angle_batch_size,
+                 const int n_angles);
 
 } // namespace radon

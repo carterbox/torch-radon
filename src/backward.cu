@@ -7,17 +7,38 @@
 #include "texture.h"
 #include "utils.h"
 
-template<bool parallel_beam, int channels, typename T>
+/**
+ * @brief
+ *
+ * @tparam parallel_beam
+ * @tparam texture_channels
+ * @tparam T the type of the real-space image
+ * @param output The real space image
+ * @param texture A texture containing the diffraction patterns
+ * @param angles
+ * @param vol_cfg
+ * @param proj_cfg
+ */
+// launch expectation is x and y are spread across the x,y dimensions of
+// threads and blocks the z dimension is for the batches/channels
+// The number of z blocks should equal the number of textures so that the
+// threads in a z block have the same angles guarantee i.e. BlockDim.z must be 1
+// or zero
+template<bool parallel_beam, int texture_channels, typename T>
 __global__ void
 backward_kernel(T* __restrict__ output,
                 cudaTextureObject_t texture,
                 const float* __restrict__ angles,
                 const VolumeCfg vol_cfg,
-                const ProjectionCfg proj_cfg)
+                const ProjectionCfg proj_cfg,
+                const int angle_batch_size,
+                const int n_angles,
+                const int real_channels)
 {
   // Calculate image coordinates
   const uint x = blockIdx.x * blockDim.x + threadIdx.x;
   const uint y = blockIdx.y * blockDim.y + threadIdx.y;
+  // Linear thread id within a block
   const uint tid = threadIdx.y * blockDim.x + threadIdx.x;
 
   const float cx = vol_cfg.width / 2.0f;
@@ -31,24 +52,30 @@ backward_kernel(T* __restrict__ output,
   const float sdx = dx * ids;
   const float sdy = dy * ids;
 
-  const int base = x + vol_cfg.width * (y + vol_cfg.height * blockIdx.z);
-  const int pitch = vol_cfg.width * vol_cfg.height * blockDim.z * gridDim.z;
+  // (batch, channel, height, width)
+  const int texture_id = blockIdx.z; // assert BlockDim.z == 1 or 0
+  const int batch_id = texture_id * texture_channels / real_channels;
+  const int angle_offset = n_angles * (batch_id % angle_batch_size);
+  const int base =
+    x + vol_cfg.width * (y + vol_cfg.height * (texture_channels * (texture_id)));
+  const int pitch = vol_cfg.width * vol_cfg.height;
 
   // keep sin and cos packed toghether to save one memory load in the main loop
+  // __shared__ memory is shared between threads in a block
   __shared__ float2 sincos[4096];
 
-  for (int i = tid; i < proj_cfg.n_angles; i += 256) {
+  for (int i = tid; i < proj_cfg.n_angles; i += blockDim.x * blockDim.y) {
     float2 tmp;
-    tmp.x = -__sinf(angles[i]);
-    tmp.y = __cosf(angles[i]);
+    tmp.x = -__sinf(angles[i + angle_offset]);
+    tmp.y = __cosf(angles[i + angle_offset]);
     sincos[i] = tmp;
   }
   __syncthreads();
 
   if (x < vol_cfg.width && y < vol_cfg.height) {
-    float accumulator[channels];
+    float accumulator[texture_channels];
 #pragma unroll
-    for (int i = 0; i < channels; i++)
+    for (int i = 0; i < texture_channels; i++)
       accumulator[i] = 0.0f;
 
     if (parallel_beam) {
@@ -60,11 +87,11 @@ backward_kernel(T* __restrict__ output,
 #pragma unroll(16)
       for (int i = 0; i < n_angles; i++) {
         float j = sincos[i].y * sdx + sincos[i].x * sdy + cr;
-        if (channels == 1) {
-          accumulator[0] += tex2DLayered<float>(texture, j, fi, blockIdx.z);
+        if (texture_channels == 1) {
+          accumulator[0] += tex2DLayered<float>(texture, j, fi, texture_id);
         } else {
           // read 4 values at the given position and accumulate
-          float4 read = tex2DLayered<float4>(texture, j, fi, blockIdx.z);
+          float4 read = tex2DLayered<float4>(texture, j, fi, texture_id);
           accumulator[0] += read.x;
           accumulator[1] += read.y;
           accumulator[2] += read.z;
@@ -89,12 +116,12 @@ backward_kernel(T* __restrict__ output,
 
         float j = (sincos[i].y * sdx + sincos[i].x * sdy) * iden + cr;
 
-        if (channels == 1) {
+        if (texture_channels == 1) {
           accumulator[0] +=
-            tex2DLayered<float>(texture, j, fi, blockIdx.z) * iden;
+            tex2DLayered<float>(texture, j, fi, texture_id) * iden;
         } else {
           // read 4 values at the given position and accumulate
-          float4 read = tex2DLayered<float4>(texture, j, fi, blockIdx.z);
+          float4 read = tex2DLayered<float4>(texture, j, fi, texture_id);
           accumulator[0] += read.x * iden;
           accumulator[1] += read.y * iden;
           accumulator[2] += read.z * iden;
@@ -105,7 +132,7 @@ backward_kernel(T* __restrict__ output,
     }
 
 #pragma unroll
-    for (int b = 0; b < channels; b++) {
+    for (int b = 0; b < texture_channels; b++) {
       output[base + b * pitch] = accumulator[b] * ids;
     }
   }
@@ -121,49 +148,101 @@ radon::backward_cuda(const T* x,
                      const ProjectionCfg& proj_cfg,
                      const ExecCfg& exec_cfg,
                      const int batch_size,
-                     const int device)
+                     const int channels,
+                     const int device,
+                     const int angle_batch_size,
+                     const int n_angles)
 {
   constexpr bool is_float = std::is_same<T, float>::value;
   constexpr int precision = is_float ? PRECISION_FLOAT : PRECISION_HALF;
-  const int channels = exec_cfg.get_channels(batch_size);
+
+  LOG_DEBUG("Radon backward 2D. Height: " << vol_cfg.height
+                                          << " width: " << vol_cfg.width
+                                          << " channels: " << channels);
+  LOG_DEBUG("Radon backward 2D. Det count: "
+            << proj_cfg.det_count_u << " angles: " << n_angles
+            << " angles_batch_size: " << angle_batch_size
+            << " batch_size: " << batch_size);
+
+  // If the number of channels is a multiple of 4, then we can use the texture
+  // channels to decrease the thread grid size. NOTE: CUDA also supports
+  // textures with 2 channels.
+  int texture_channels = 1;
+  if (channels % 4 == 0) {
+    texture_channels = 4;
+  }
+  if (texture_channels > 4) {
+    throw std::invalid_argument("This more than 4 channels is unsupported!");
+  }
+  const int grid_size_z = batch_size * channels / texture_channels;
 
   // copy x into CUDA Array (allocating it if needed) and bind to texture
   Texture* tex = tex_cache.get({ device,
-                                 batch_size / channels,
+                                 grid_size_z,
                                  proj_cfg.n_angles,
                                  proj_cfg.det_count_u,
                                  true,
-                                 channels,
+                                 texture_channels,
                                  precision });
   tex->put(x);
 
-  // dim3 block_dim(16, 16);
-  dim3 block_dim = exec_cfg.get_block_dim();
-  dim3 grid_dim = exec_cfg.get_grid_size(
-    vol_cfg.width, vol_cfg.height, batch_size / channels);
+  dim3 block_dim(3, 3);
+  dim3 grid_dim(1, 1, grid_size_z);
+  // dim3 block_dim = exec_cfg.get_block_dim();
+  // dim3 grid_dim =
+  //   exec_cfg.get_grid_size(vol_cfg.width, vol_cfg.height, grid_size_z);
 
-    switch (channels) {
-      case 1:
-        if (proj_cfg.projection_type == FANBEAM) {
-          backward_kernel<false, 1, T>
-            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
-        } else {
-          backward_kernel<true, 1, T>
-            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
-        }
-        break;
-      case 4:
-        if (proj_cfg.projection_type == FANBEAM) {
-          backward_kernel<false, 4, T>
-            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
-        } else {
-          backward_kernel<true, 4, T>
-            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
-        }
-        break;
-      default:
-        throw std::invalid_argument("This is an unsupported number of channels!");
-    }
+  LOG_DEBUG("Block Size x:" << block_dim.x << " y:" << block_dim.y
+                            << " z:" << block_dim.z);
+  LOG_DEBUG("Grid Size x:" << grid_dim.x << " y:" << grid_dim.y
+                           << " z:" << grid_dim.z);
+
+  switch (texture_channels) {
+    case 1:
+      if (proj_cfg.projection_type == FANBEAM) {
+        backward_kernel<false, 1, T><<<grid_dim, block_dim>>>(y,
+                                                              tex->texture,
+                                                              angles,
+                                                              vol_cfg,
+                                                              proj_cfg,
+                                                              angle_batch_size,
+                                                              n_angles,
+                                                              channels);
+      } else {
+        backward_kernel<true, 1, T><<<grid_dim, block_dim>>>(y,
+                                                             tex->texture,
+                                                             angles,
+                                                             vol_cfg,
+                                                             proj_cfg,
+                                                             angle_batch_size,
+                                                             n_angles,
+                                                             channels);
+      }
+      break;
+    case 4:
+      if (proj_cfg.projection_type == FANBEAM) {
+        backward_kernel<false, 4, T><<<grid_dim, block_dim>>>(y,
+                                                              tex->texture,
+                                                              angles,
+                                                              vol_cfg,
+                                                              proj_cfg,
+                                                              angle_batch_size,
+                                                              n_angles,
+                                                              channels);
+      } else {
+        backward_kernel<true, 4, T><<<grid_dim, block_dim>>>(y,
+                                                             tex->texture,
+                                                             angles,
+                                                             vol_cfg,
+                                                             proj_cfg,
+                                                             angle_batch_size,
+                                                             n_angles,
+                                                             channels);
+      }
+      break;
+    default:
+      throw std::invalid_argument("This is an unsupported number of channels!");
+  }
 }
 
 template void
@@ -175,8 +254,10 @@ radon::backward_cuda<float>(const float* x,
                             const ProjectionCfg& proj_cfg,
                             const ExecCfg& exec_cfg,
                             const int batch_size,
-                            const int device);
-
+                            const int channels,
+                            const int device,
+                            const int angle_batch_size,
+                            const int n_angles);
 template void
 radon::backward_cuda<__half>(const __half* x,
                              const float* angles,
@@ -186,7 +267,10 @@ radon::backward_cuda<__half>(const __half* x,
                              const ProjectionCfg& proj_cfg,
                              const ExecCfg& exec_cfg,
                              const int batch_size,
-                             const int device);
+                             const int channels,
+                             const int device,
+                             const int angle_batch_size,
+                             const int n_angles);
 
 template<int channels, typename T>
 __global__ void
@@ -294,18 +378,28 @@ radon::backward_cuda_3d(const T* x,
                         const ProjectionCfg& proj_cfg,
                         const ExecCfg& exec_cfg,
                         const int batch_size,
-                        const int device)
+                        const int channels,
+                        const int device,
+                        const int angle_batch_size,
+                        const int n_angles)
 {
   constexpr bool is_float = std::is_same<T, float>::value;
   constexpr int precision = is_float ? PRECISION_FLOAT : PRECISION_HALF;
-  const int channels = exec_cfg.get_channels(batch_size);
+
+  // If the number of channels is a multiple of 4, then we can use the texture
+  // channels to decrease the thread grid size. NOTE: CUDA also supports
+  // textures with 2 channels.
+  int texture_channels = 1;
+  if (channels % 4 == 0) {
+    texture_channels = 4;
+  }
 
   Texture* tex = tex_cache.get({ device,
                                  proj_cfg.n_angles,
                                  proj_cfg.det_count_v,
                                  proj_cfg.det_count_u,
                                  true,
-                                 channels,
+                                 texture_channels,
                                  precision });
 
   dim3 grid_dim =
@@ -342,7 +436,10 @@ radon::backward_cuda_3d<float>(const float* x,
                                const ProjectionCfg& proj_cfg,
                                const ExecCfg& exec_cfg,
                                const int batch_size,
-                               const int device);
+                               const int channels,
+                               const int device,
+                               const int angle_batch_size,
+                               const int n_angles);
 
 template void
 radon::backward_cuda_3d<__half>(const __half* x,
@@ -353,4 +450,7 @@ radon::backward_cuda_3d<__half>(const __half* x,
                                 const ProjectionCfg& proj_cfg,
                                 const ExecCfg& exec_cfg,
                                 const int batch_size,
-                                const int device);
+                                const int channels,
+                                const int device,
+                                const int angle_batch_size,
+                                const int n_angles);

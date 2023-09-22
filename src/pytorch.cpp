@@ -64,7 +64,8 @@ radon_forward(torch::Tensor x,
   int batch_size;
   int channels;
   const int n_angles = angles.size(-1);
-  proj_cfg.n_angles = n_angles;  // FIXME: This is a hack that should be refactored away
+  proj_cfg.n_angles =
+    n_angles; // FIXME: This is a hack that should be refactored away
   const int n_angles_batch = angles.dim() == 2 ? angles.size(-2) : 1;
   auto options = torch::TensorOptions().dtype(x.dtype()).device(x.device());
   torch::Tensor y;
@@ -93,8 +94,7 @@ radon_forward(torch::Tensor x,
         batch_size = 1;
         channels = 1;
         y = torch::empty(
-          { channels, n_angles, proj_cfg.det_count_v, proj_cfg.det_count_u },
-          options);
+          { n_angles, proj_cfg.det_count_v, proj_cfg.det_count_u }, options);
         break;
     }
 
@@ -183,25 +183,51 @@ radon_backward(torch::Tensor x,
                torch::Tensor angles,
                TextureCache& tex_cache,
                const VolumeCfg& vol_cfg,
-               const ProjectionCfg& proj_cfg,
+               ProjectionCfg& proj_cfg,
                const ExecCfg& exec_cfg)
 {
   CHECK_INPUT(x);
   CHECK_INPUT(angles);
+  TORCH_CHECK(angles.size(-1) <= 4096, "Can only support up to 4096 angles");
 
-  auto dtype = x.dtype();
-
-  const int batch_size = x.size(0);
-  const int device = x.device().index();
-
-  TORCH_CHECK(angles.size(0) <= 4096, "Can only support up to 4096 angles")
-
+  int batch_size = 1;
+  int channels = 1;
+  const int n_angles = angles.size(-1);
+  // FIXME: This is a hack that should be refactored away
+  proj_cfg.n_angles = n_angles;
+  const int n_angles_batch = angles.dim() == 2 ? angles.size(-2) : 1;
   // create output image tensor
+  const int device = x.device().index();
+  auto dtype = x.dtype();
   auto options = torch::TensorOptions().dtype(dtype).device(x.device());
+  torch::Tensor y;
 
   if (vol_cfg.is_3d) {
-    auto y = torch::empty(
-      { batch_size, vol_cfg.depth, vol_cfg.height, vol_cfg.width }, options);
+    switch (x.dim()) {
+      case 5:
+        batch_size = x.size(0);
+        channels = x.size(1);
+        y = torch::empty({ batch_size,
+                           channels,
+                           vol_cfg.depth,
+                           vol_cfg.height,
+                           vol_cfg.width },
+                         options);
+        break;
+      case 4:
+        batch_size = 1;
+        channels = x.size(0);
+        y = torch::empty(
+          { channels, vol_cfg.depth, vol_cfg.height, vol_cfg.width }, options);
+        break;
+      case 3:
+      default:
+        batch_size = 1;
+        channels = 1;
+        y = torch::empty({ vol_cfg.depth, vol_cfg.height, vol_cfg.width },
+                         options);
+        break;
+    }
 
     if (dtype == torch::kFloat16) {
       radon::backward_cuda_3d((__half*)x.data_ptr<at::Half>(),
@@ -212,7 +238,10 @@ radon_backward(torch::Tensor x,
                               proj_cfg,
                               exec_cfg,
                               batch_size,
-                              device);
+                              channels,
+                              device,
+                              1,
+                              n_angles);
     } else {
       radon::backward_cuda_3d(x.data_ptr<float>(),
                               angles.data_ptr<float>(),
@@ -222,12 +251,34 @@ radon_backward(torch::Tensor x,
                               proj_cfg,
                               exec_cfg,
                               batch_size,
-                              device);
+                              channels,
+                              device,
+                              1,
+                              n_angles);
     }
     return y;
   } else {
-    auto y =
-      torch::empty({ batch_size, vol_cfg.height, vol_cfg.width }, options);
+    // sinogram: (batch, channel, angle, width)
+    // image: (batch, channel, height, width)
+    switch (x.dim()) {
+      case 4:
+        batch_size = x.size(0);
+        channels = x.size(1);
+        y = torch::empty(
+          { batch_size, channels, vol_cfg.height, vol_cfg.width }, options);
+        break;
+      case 3:
+        batch_size = 1;
+        channels = x.size(0);
+        y = torch::empty({ channels, vol_cfg.height, vol_cfg.width }, options);
+        break;
+      case 2:
+      default:
+        batch_size = 1;
+        channels = 1;
+        y = torch::empty({ vol_cfg.height, vol_cfg.width }, options);
+        break;
+    }
 
     if (dtype == torch::kFloat16) {
       radon::backward_cuda((__half*)x.data_ptr<at::Half>(),
@@ -238,7 +289,10 @@ radon_backward(torch::Tensor x,
                            proj_cfg,
                            exec_cfg,
                            batch_size,
-                           device);
+                           channels,
+                           device,
+                           n_angles_batch,
+                           n_angles);
     } else {
       radon::backward_cuda(x.data_ptr<float>(),
                            angles.data_ptr<float>(),
@@ -248,7 +302,10 @@ radon_backward(torch::Tensor x,
                            proj_cfg,
                            exec_cfg,
                            batch_size,
-                           device);
+                           channels,
+                           device,
+                           n_angles_batch,
+                           n_angles);
     }
 
     return y;
