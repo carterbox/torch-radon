@@ -186,11 +186,11 @@ radon::backward_cuda(const T* x,
                                  precision });
   tex->put(x);
 
-  dim3 block_dim(3, 3);
-  dim3 grid_dim(1, 1, grid_size_z);
-  // dim3 block_dim = exec_cfg.get_block_dim();
-  // dim3 grid_dim =
-  //   exec_cfg.get_grid_size(vol_cfg.width, vol_cfg.height, grid_size_z);
+  // dim3 block_dim(3, 3);
+  // dim3 grid_dim(1, 1, grid_size_z);
+  dim3 block_dim = exec_cfg.get_block_dim();
+  dim3 grid_dim =
+    exec_cfg.get_grid_size(vol_cfg.width, vol_cfg.height, grid_size_z);
 
   LOG_DEBUG("Block Size x:" << block_dim.x << " y:" << block_dim.y
                             << " z:" << block_dim.z);
