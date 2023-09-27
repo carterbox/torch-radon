@@ -6,7 +6,7 @@ import itertools
 
 import torch_radon
 
-torch_radon.cuda_backend.set_log_level(0)
+# torch_radon.cuda_backend.set_log_level(0)
 
 from .utils import random_symbolic_function, symbolic_discretize, symbolic_forward, TestHelper, assert_equal
 
@@ -174,10 +174,16 @@ def manual_integrals(x):
     'batch,channel,dtype',
     itertools.product(
         [
-            1, 3, 4, 8,
+            1,
+            3,
+            4,
+            8,
         ],
         [
-            1, 3, 4, 8,
+            1,
+            3,
+            4,
+            8,
         ],
         [
             'float',
@@ -256,10 +262,16 @@ def manual_back(s):
     'batch,channel,dtype',
     itertools.product(
         [
-            1, 3, 4, 8,
+            1,
+            3,
+            4,
+            8,
         ],
         [
-            1, 3, 4, 8,
+            1,
+            3,
+            4,
+            8,
         ],
         [
             'float',
@@ -331,3 +343,76 @@ def test_simple_back(image_size=5):
          [2., 3., 2., 5., 2.], [0., 1., 0., 3., 0.]], )
 
     assert torch.equal(original.cpu(), ref)
+
+
+@pytest.mark.parametrize(
+    'batch,channel,dtype',
+    itertools.product(
+        [
+            1,
+            3,
+            4,
+            8,
+        ],
+        [
+            1,
+            3,
+            4,
+            8,
+        ],
+        [
+            'float',
+            # 'half',
+        ],
+    ),
+)
+def test_adjoint(batch, channel, dtype):
+    """Test whether the backward and forward operators are true adjoints.
+
+    If they are true adjoints then the inner products as computed below should
+    be equal. Seems to be not a great adjoint due to only equal up to 2 sigfigs.
+    """
+
+    image_size = 64
+    nangles = 7
+    convert = dict(float=torch.float, half=torch.half)
+    device = torch.device('cuda')
+
+    image0 = torch.abs(
+        torch.rand(
+            (batch, channel, image_size, image_size),
+            dtype=convert[dtype],
+            device=device,
+        ))
+    sino0 = torch.abs(
+        torch.rand(
+            (batch, channel, nangles, image_size),
+            dtype=convert[dtype],
+            device=device,
+        ))
+    angles = torch.linspace(
+        start=0,
+        end=torch.pi,
+        steps=nangles,
+        device=device,
+        dtype=torch.float32,
+    )
+
+    volume = torch_radon.volumes.Volume2D()
+    volume.set_size(image_size, image_size)
+
+    radon = torch_radon.ParallelBeam(
+        volume=volume,
+        det_spacing=1.0,
+        det_count=image_size,
+    )
+
+    sino1 = radon.forward(image=image0, angles=angles)
+    assert sino1.shape == sino0.shape
+    image1 = radon.backward(sinogram=sino0, angles=angles)
+    assert image1.shape == image0.shape
+    a = torch.inner(sino1.flatten(), sino0.flatten())
+    b = torch.inner(image0.flatten(), image1.flatten())
+    print()
+    print('<Fm,   m> = {:.5g}{:+.5g}j'.format(a.item(), 0))
+    print('< d, F*d> = {:.5g}{:+.5g}j'.format(b.item(), 0))
