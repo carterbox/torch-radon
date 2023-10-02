@@ -17,11 +17,11 @@ jobs:
       matrix:
         cuda-version: ['11.2', '11.8']
         pytorch-version: ['1']
-      include:
-        - gxx-version: '10'
-          cuda-version: '11.2'
-        - gxx-version: '11'
-          cuda-version: '11.8'
+        include:
+          - gxx-version: '10'
+            cuda-version: '11.2'
+          - gxx-version: '11'
+            cuda-version: '11.8'
 
     steps:
     - uses: actions/checkout@v3
