@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=62", "setuptools_scm[toml]>=8.0", "torch"]
+build-backend = "setuptools.build_meta"
+
+[project]
+dynamic = ["version"]
+name = "torch_radon"
+authors = [
+    {name = "Matteo Ronchetti", email = "mttronchetti@gmail.com"},
+    {name = "Daniel Ching"},
+]
+description = "Radon transform operators for PyTorch."
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+dependencies = [
+    "torch",
+    "scipy",
+    "numpy",
+]
+
+[project.optional-dependencies]
+testing = [
+    "astra-toolbox",
+    "dxchange",
+    "matplotlib",
+    "parameterized",
+    "pytest",
+    "scikit-image",
+]
+
+[project.urls]
+Homepage = "https://github.com/carterbox/torch-radon"
+
+[tool.setuptools_scm]
