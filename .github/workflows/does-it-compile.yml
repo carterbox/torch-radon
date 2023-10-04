@@ -1,0 +1,70 @@
+name: Test whether it compiles with various compilers
+
+on:
+  pull_request:
+    branches:
+    - main
+    - master
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
+        shell: bash -el {0}
+    strategy:
+      max-parallel: 5
+      matrix:
+        cuda-version: ['11.2', '11.8']
+        pytorch-version: ['1']
+        include:
+          - gxx-version: '10'
+            cuda-version: '11.2'
+          - gxx-version: '11'
+            cuda-version: '11.8'
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install the CUDA toolkit
+      run: |
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+        sudo dpkg -i cuda-keyring_1.0-1_all.deb
+        sudo rm cuda-keyring_1.0-1_all.deb
+        sudo apt-get update
+        cversion=${{ matrix.cuda-version }}
+        sudo apt-get -y install cuda-minimal-build-${cversion//./-} libcufft-dev-${cversion//./-} libcurand-dev-${cversion//./-}
+        sudo dpkg -L cuda-nvcc-${cversion//./-}
+    - name: Check GCC toolchain
+      run: |
+        gcc --version
+        g++ --version
+    - name: Check NVCC toolchain
+      run: |
+        /usr/local/cuda-${{ matrix.cuda-version }}/bin/nvcc --version
+    - uses: conda-incubator/setup-miniconda@v2
+    - name: Install dependencies
+      run: >
+        CONDA_OVERRIDE_CUDA=${{ matrix.cuda-version }}
+        conda create
+        -n torch
+        -c conda-forge
+        --solver=libmamba
+        cuda-version=${{ matrix.cuda-version }}
+        pytorch-gpu=${{ matrix.pytorch-version }}
+        gxx_linux-64=${{ matrix.gxx-version }}
+        scipy
+        numpy
+        pip
+        setuptools
+        ninja
+        cmake
+    - name: Build torch-radon
+      run: |
+        conda activate torch
+        which python
+        export TORCH_CUDA_ARCH_LIST="5.0;6.0;7.0;8.0"
+        CUDA_HOME=/usr/local/cuda-${{ matrix.cuda-version }} pip install . -vv --no-deps --no-build-isolation
+    - name: Test dependencies
+      run: |
+        conda activate torch
+        pip check
