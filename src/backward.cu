@@ -57,7 +57,8 @@ backward_kernel(T* __restrict__ output,
   const int batch_id = texture_id * texture_channels / real_channels;
   const int angle_offset = n_angles * (batch_id % angle_batch_size);
   const int base =
-    x + vol_cfg.width * (y + vol_cfg.height * (texture_channels * (texture_id)));
+    x +
+    vol_cfg.width * (y + vol_cfg.height * (texture_channels * (texture_id)));
   const int pitch = vol_cfg.width * vol_cfg.height;
 
   // keep sin and cos packed toghether to save one memory load in the main loop
