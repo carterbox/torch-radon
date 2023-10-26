@@ -56,7 +56,14 @@ class RadonForward(torch.autograd.Function):
 
 
 class RadonBackprojection(torch.autograd.Function):
-    """Perform the adjoint Radon transformation from sinogram to real space."""
+    """Perform the adjoint Radon transformation from sinogram to real space.
+
+    Parameters
+    ----------
+    sinogram : (batch, channels, angles, width)
+    angles : (batch, angles)
+
+    """
 
     @staticmethod
     def forward(
