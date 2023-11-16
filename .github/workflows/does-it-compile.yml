@@ -15,13 +15,18 @@ jobs:
     strategy:
       max-parallel: 5
       matrix:
-        cuda-version: ['11.2', '11.8']
-        pytorch-version: ['1']
+        cuda-version: ['11.2', '11.8', '12.0']
+        pytorch-version: ['1', '2']
         include:
           - gxx-version: '10'
             cuda-version: '11.2'
           - gxx-version: '11'
             cuda-version: '11.8'
+          - gxx-version: '12'
+            cuda-version: '12.0'
+        exclude:
+          - pytorch-version: '1'
+            cuda-version: '12.0'
 
     steps:
     - uses: actions/checkout@v3
