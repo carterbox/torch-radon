@@ -24,6 +24,9 @@ jobs:
             cuda-version: '11.8'
           - gxx-version: '12'
             cuda-version: '12.0'
+        exclude:
+          - pytorch-version: '1'
+            cuda-version: '12.0'
 
     steps:
     - uses: actions/checkout@v3
