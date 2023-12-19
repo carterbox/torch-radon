@@ -43,15 +43,17 @@ detailed benchmarks.
 
 ## Installation
 
-Currently only Linux is supported.
+Currently only Linux is supported. Windows not supported mainly because there not yet a Windows package for PyTorch on the conda-forge channel.
 
-## Install via the Conda package manager and conda-forge channel
+## Install via the Conda package manager and the conda-forge channel
 
 Please read about how to setup and use the conda package manager before attempting the following command.
 
 ```bash
 conda install --channel conda-forge carterbox-torch-radon
 ```
+
+No PYPI packages will be provided because pip was not designed for mixed-language software distribution.
 
 ## Cite
 
