@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from torch_radon import Radon
+from torch_radon import ParallelBeam as Radon
 from torch_radon.solvers import Landweber
 from utils import show_images
 

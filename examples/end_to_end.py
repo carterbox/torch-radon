@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from torch_radon import Radon
+from torch_radon import ParallelBeam as Radon
 
 batch_size = 8
 n_angles = 64
 image_size = 128
 channels = 4
+det_count = image_size
 
 device = torch.device('cuda')
 criterion = nn.L1Loss()
@@ -20,7 +21,7 @@ x = torch.FloatTensor(batch_size, 1, image_size, image_size).to(device)
 
 # instantiate Radon transform
 angles = np.linspace(0, np.pi, n_angles)
-radon = Radon(image_size, angles)
+radon = Radon(det_count, angles)
 
 # forward projection
 sinogram = radon.forward(x)
@@ -29,7 +30,7 @@ sinogram = radon.forward(x)
 filtered_sinogram = sino_model(sinogram)
 
 # backprojection
-backprojected = radon.backprojection(filtered_sinogram)
+backprojected = radon.backward(filtered_sinogram)
 
 # apply image_model to backprojected images
 y = image_model(backprojected)
@@ -37,3 +38,12 @@ y = image_model(backprojected)
 # backward works as usual
 loss = criterion(y, x)
 loss.backward()
+
+def print_tensor(tensor:torch.Tensor, tensor_name):
+    print(f'{tensor_name}: ', tuple(tensor.shape), tensor.min(), tensor.max())
+
+print_tensor(x, 'X')
+print_tensor(sinogram, 'Sino')
+print_tensor(filtered_sinogram, 'Filtered')
+print_tensor(backprojected, 'Backproj')
+print_tensor(y, 'Y')
