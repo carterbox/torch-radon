@@ -70,8 +70,8 @@ jobs:
       run: |
         conda activate torch
         which python
-        export TORCH_CUDA_ARCH_LIST=${{ matrix.arch-list }}
-        CUDA_HOME=/usr/local/cuda-${{ matrix.cuda-version }} pip install . -vv --no-deps --no-build-isolation
+        export TORCH_CUDA_ARCH_LIST="${{ matrix.arch-list }}"
+        CUDA_HOME=/usr/local/cuda-${{ matrix.cuda-version }} pip install . -vv --no-deps --no-build-isolation --no-index
     - name: Test dependencies
       run: |
         conda activate torch
