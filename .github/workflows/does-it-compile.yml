@@ -23,7 +23,7 @@ jobs:
             arch-list: "5.0;6.0;7.0;8.0"
           - gxx-version: '11'
             cuda-version: '11.8'
-            arch-list: "5.0;6.0;7.0;8.0;9.0"
+            arch-list: "5.0;6.0;7.0;8.0"
           - gxx-version: '12'
             cuda-version: '12.0'
             arch-list: "5.0;6.0;7.0;8.0;9.0"
