@@ -42,7 +42,7 @@ setup(
                 ],
             },
             libraries=[
-                'cufft',
+                'cufft', 'curand',
             ],
         ),
     ],
