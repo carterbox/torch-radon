@@ -9,9 +9,7 @@ from torch_radon import FanBeam, Volume2D
 class TestDataset(Dataset):
     def __init__(self):
         super().__init__()
-        img = np.zeros((512, 512), dtype=np.float32)
-        img[:, 255] = 1.
-        img[255, :] = 1.
+        img = np.load('phantom.npy')
         
         imgs = [
             img,
