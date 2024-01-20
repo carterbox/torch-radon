@@ -35,6 +35,7 @@ setup(
                     # GNU++ >=14 required hexfloat extension in rmath.h
                     # C++ >=17 required pytorch>=2.1
                     "-std=c++17",
+                    "-fvisibility=hidden",
                 ],
                 "nvcc": [
                     # __half conversions required in backprojection
