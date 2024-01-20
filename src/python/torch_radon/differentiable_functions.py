@@ -19,6 +19,9 @@ class RadonForward(Function):
 
     @staticmethod
     def backward(ctx, grad_x):
+        if not grad_x.is_contiguous():
+            grad_x = grad_x.contiguous()
+            
         angles, = ctx.saved_tensors
         exec_cfg = ctx.exec_cfg_generator(ctx.vol_cfg, ctx.proj_cfg, grad_x.dtype == torch.half)
         grad = cuda_backend.backward(grad_x, angles, ctx.tex_cache, ctx.vol_cfg, ctx.proj_cfg, exec_cfg)
@@ -40,6 +43,9 @@ class RadonBackprojection(Function):
 
     @staticmethod
     def backward(ctx, grad_x):
+        if not grad_x.is_contiguous():
+            grad_x = grad_x.contiguous()
+            
         angles, = ctx.saved_tensors
         exec_cfg = ctx.exec_cfg_generator(ctx.vol_cfg, ctx.proj_cfg, grad_x.dtype == torch.half)
         grad = cuda_backend.forward(grad_x, angles, ctx.tex_cache, ctx.vol_cfg, ctx.proj_cfg, exec_cfg)

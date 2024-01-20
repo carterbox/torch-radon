@@ -30,14 +30,21 @@ class TestDataset(Dataset):
 
 
 class TestNet(nn.Module):
-    def __init__(self, channels=3) -> None:
+    def __init__(self, channels=3, img_size=(512, 512)) -> None:
         super().__init__()
+        # Network parameters
         self.sino_model = nn.Sequential(
             nn.Conv2d(1, channels, 5, padding=2),
             nn.Conv2d(channels, 1, 5, padding=2)
         )
         self.img_model = nn.Conv2d(2, 1, 3, padding=1).to(device)
+        
+        # Tomography parameters
         self.det_count = 672
+        self.full_angles = np.linspace(0, np.pi * 2, 360, endpoint=False)
+        self.volume = Volume2D()
+        self.volume.set_size(img_size[0], img_size[1])
+        self.radon = FanBeam(self.det_count, angles=self.full_angles, volume=self.volume)
     
     def forward_sino(self, sino):
         print('>>> Forwarding sino net.')
@@ -49,55 +56,49 @@ class TestNet(nn.Module):
         return self.img_model(img)
     
     def projection(self, img, angles=None, filter=True):
-        if angles is None:
-            angles = np.linspace(0, np.pi * 2, 360, endpoint=False)
-        
-        volume = Volume2D()
-        volume.set_size(img.shape[-2], img.shape[-1])  # [B, C, H, W]
-        radon = FanBeam(self.det_count, angles, volume=volume)
-        sino = radon.forward(img)
+        angles = self.full_angles if angles is None else angles
+
+        sino = self.radon.forward(img, angles=angles)
         if filter:
-            sino = radon.filter_sinogram(sino)
+            sino = self.radon.filter_sinogram(sino)
         return sino
     
-    def backprojection(self, sino, img_shape, angles=None):
-        if angles is None:
-            angles = np.linspace(0, np.pi * 2, 360, endpoint=False)
+    def backprojection(self, sino, angles=None):
+        angles = self.full_angles if angles is None else angles
 
-        volume = Volume2D()
-        volume.set_size(img_shape[-2], img_shape[-1])  # [H, W]
-        radon = FanBeam(self.det_count, angles, volume=volume)
-        img = radon.backward(sino)
+        img = self.radon.backward(sino, angles=angles)
         return img
     
-    def forward(self, sino, img_shape, angles=None):
-        img = self.backprojection(sino, img_shape, angles=angles)
+    def forward(self, sino, angles=None):
+        img = self.backprojection(sino, angles=angles)
         sino_pred = self.forward_sino(sino)
-        img_sino = self.backprojection(sino_pred, img_shape, angles=angles)
+        img_sino = self.backprojection(sino_pred, angles=angles)
         img_pred = self.forward_img(img, img_sino)
         return sino_pred, img_sino, img_pred
 
 
 
 if __name__ == '__main__':
+    import os
     import torch.optim as optim
     from torch.utils.data import DataLoader
     
+    os.environ['CUDA_VISIBLE_DEVICES'] = '5'  # set your own GPU id
     device = torch.device('cuda')
     dataset = TestDataset()
     loader = DataLoader(dataset, batch_size=2, num_workers=4, pin_memory=True, shuffle=True)
-    net = TestNet().to(device)
+    img_size = dataset.imgs[0].shape
+    net = TestNet(img_size=img_size).to(device)
     optimizer = optim.Adam(net.parameters(), lr=1e-4)
-    angles = torch.linspace(0, np.pi * 2, 360, requires_grad=False).float()
+    angles = torch.linspace(0, np.pi * 2, 360, requires_grad=False).float().to(device)
     
     for i, data in enumerate(loader):
         print(f'Batch: {i}')
-        img_shape = data.shape[2:]
         with torch.no_grad():
             sino = net.projection(data.to(device).detach(), angles=angles).detach()
-            img = net.backprojection(sino, img_shape=img_shape, angles=angles).detach()
+            img = net.backprojection(sino, angles=angles).detach()
         
-        sino_pred, _, img_pred = net(sino, img_shape=img_shape, angles=angles)
+        sino_pred, _, img_pred = net(sino, angles=angles)
         
         loss1 = F.l1_loss(sino, sino_pred)
         loss2 = F.l1_loss(img, img_pred)
