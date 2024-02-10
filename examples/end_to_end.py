@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, Dataset
 
 
 class TestDataset(Dataset):
-    """A dataset of 2D phantoms. Shape is (N, W, H)"""
+    """A dataset of 2D phantoms. Shape is (C, H, W)"""
 
     def __init__(self):
         super().__init__()
@@ -71,6 +71,7 @@ class TestNet(nn.Module):
         )
 
     def forward(self, sino):
+        #sino = self.radon.filter_sinogram(sino)
         img = self.radon.backward(
             sino,
         )
