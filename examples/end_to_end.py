@@ -72,17 +72,15 @@ class TestNet(nn.Module):
 
     def forward(self, sino):
         #sino = self.radon.filter_sinogram(sino)
-        img = self.radon.backward(
-            sino,
-        )
         print(">>> Forwarding sino net.")
         sino_pred = self.sino_model(sino)
-        img_sino = self.radon.backward(
-            sino_pred,
+        sino_cat = torch.cat([sino, sino_pred], dim=1)
+        img_cat = self.radon.backward(
+            sino_cat,
         )
         print(">>> Forwarding img net.")
-        img_pred = self.img_model(torch.cat([img, img_sino], dim=1))
-        return sino_pred, img_sino, img_pred
+        img_pred = self.img_model(img_cat)
+        return sino_pred, img_cat[:, 1, ...], img_pred
 
 
 if __name__ == "__main__":
