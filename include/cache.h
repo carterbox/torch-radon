@@ -5,6 +5,8 @@
 #include <iostream>
 #include <string.h>
 
+using namespace std;
+
 /**
  * @brief Provides a fixed size data cache
  *

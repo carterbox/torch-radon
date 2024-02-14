@@ -82,7 +82,7 @@ class BaseRadon:
 
         self.projection.cfg.n_angles = len(angles)
 
-        y = RadonForward.apply(x, self.angles, self.tex_cache, self.volume.to_cfg(), self.projection.cfg,
+        y = RadonForward.apply(x, angles, self.tex_cache, self.volume.to_cfg(), self.projection.cfg,
                                self.exec_cfg_generator, exec_cfg)
 
         return shape_normalizer.unnormalize(y)
@@ -109,7 +109,7 @@ class BaseRadon:
 
         self.projection.cfg.n_angles = len(angles)
 
-        y = RadonBackprojection.apply(sinogram, self.angles, self.tex_cache, volume.to_cfg(), self.projection.cfg,
+        y = RadonBackprojection.apply(sinogram, angles, self.tex_cache, volume.to_cfg(), self.projection.cfg,
                                       self.exec_cfg_generator, exec_cfg)
 
         return shape_normalizer.unnormalize(y)
