@@ -142,28 +142,28 @@ radon::backward_cuda(const T* x,
   dim3 grid_dim = exec_cfg.get_grid_size(
     vol_cfg.width, vol_cfg.height, batch_size / channels);
 
-    switch (channels) {
-      case 1:
-        if (proj_cfg.projection_type == FANBEAM) {
-          backward_kernel<false, 1, T>
-            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
-        } else {
-          backward_kernel<true, 1, T>
-            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
-        }
-        break;
-      case 4:
-        if (proj_cfg.projection_type == FANBEAM) {
-          backward_kernel<false, 4, T>
-            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
-        } else {
-          backward_kernel<true, 4, T>
-            <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
-        }
-        break;
-      default:
-        throw std::invalid_argument("This is an unsupported number of channels!");
-    }
+  switch (channels) {
+    case 1:
+      if (proj_cfg.projection_type == FANBEAM) {
+        backward_kernel<false, 1, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
+      } else {
+        backward_kernel<true, 1, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
+      }
+      break;
+    case 4:
+      if (proj_cfg.projection_type == FANBEAM) {
+        backward_kernel<false, 4, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
+      } else {
+        backward_kernel<true, 4, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
+      }
+      break;
+    default:
+      throw std::invalid_argument("This is an unsupported number of channels!");
+  }
 }
 
 template void

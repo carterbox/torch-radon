@@ -25,12 +25,14 @@ symbolic::Gaussian::line_integral(float s_x,
   float x5 = s_y * x3;
   float x6 = 2 * a * cx * s_x + 2 * b * cy * s_y;
   float x7 = -cx * x2 - cy * x3 - 2 * x0 - 2 * x1 + x4 + x5 + x6;
-  float x8 = rosh::max(a * rosh::sq(e_x) + b * rosh::sq(e_y) + x0 + x1 - x4 - x5, 1e-6);
+  float x8 =
+    rosh::max(a * rosh::sq(e_x) + b * rosh::sq(e_y) + x0 + x1 - x4 - x5, 1e-6);
   float x9 = rosh::sqrt(x8);
   float x10 = (1.0 / 2.0) / x9;
   float x11 = x10 * x7;
-  float lg_x12 = rosh::log(rosh::sqrt(rosh::pi) * x10) - a * rosh::sq(cx) - b * rosh::sq(cy) - x0 - x1 +
-                 x6 + (1.0 / 4.0) * rosh::sq(x7) / x8;
+  float lg_x12 = rosh::log(rosh::sqrt(rosh::pi) * x10) - a * rosh::sq(cx) -
+                 b * rosh::sq(cy) - x0 - x1 + x6 +
+                 (1.0 / 4.0) * rosh::sq(x7) / x8;
 
   // this is not precise
   if (lg_x12 >= 5) {
@@ -39,7 +41,8 @@ symbolic::Gaussian::line_integral(float s_x,
 
   float len = rosh::hypot(e_x - s_x, e_y - s_y);
 
-  float y = k * len * rosh::exp(lg_x12) * (-rosh::erf(x11) + rosh::erf(x11 + x9));
+  float y =
+    k * len * rosh::exp(lg_x12) * (-rosh::erf(x11) + rosh::erf(x11 + x9));
 
   return y;
 }
