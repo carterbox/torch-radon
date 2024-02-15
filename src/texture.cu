@@ -143,7 +143,7 @@ get_channel_desc(int channels, int precision)
                 << channels << ", precision: " << precision << ")");
     return cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat);
   }
-  const int bitdepth = PRECISION_FLOAT ? 32 : 16;
+  const int bitdepth = (precision == PRECISION_FLOAT) ? 32 : 16;
   int component[4] = { 0, 0, 0, 0 };
   for (int i = 0; i < 4; ++i) {
     if (i < channels) {
