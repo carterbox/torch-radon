@@ -7,6 +7,12 @@
 
 using namespace std;
 
+/**
+ * @brief Provides a fixed size data cache
+ *
+ * @tparam Key
+ * @tparam Value
+ */
 template<typename Key, typename Value>
 class Cache
 {
@@ -54,7 +60,7 @@ public:
       this->cache[i] = new Value(k);
     } else {
       if (i > 0) {
-        swap(this->cache[i - 1], this->cache[i]);
+        std::swap(this->cache[i - 1], this->cache[i]);
         i -= 1;
       }
     }

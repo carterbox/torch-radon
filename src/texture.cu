@@ -32,7 +32,7 @@ TextureConfig::operator==(const TextureConfig& o) const
          this->precision == o.precision;
 }
 
-int
+TextureType
 TextureConfig::get_texture_type() const
 {
   if (this->is_layered && this->height == 0)
@@ -138,21 +138,23 @@ write_half_to_surface(const __half* data,
 cudaChannelFormatDesc
 get_channel_desc(int channels, int precision)
 {
-  if (precision == PRECISION_FLOAT) {
-    if (channels == 1) {
-      return cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
-    }
-    if (channels == 4) {
-      return cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
-    }
-  }
-  if (precision == PRECISION_HALF && channels == 4) {
+  if (channels < 1 || channels > 4 || precision < 0 || precision > 1) {
+    LOG_WARNING("Unsupported number of channels and precision (channels:"
+                << channels << ", precision: " << precision << ")");
     return cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat);
   }
-
-  LOG_WARNING("Unsupported number of channels and precision (channels:"
-              << channels << ", precision: " << precision << ")");
-  return cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat);
+  const int bitdepth = (precision == PRECISION_FLOAT) ? 32 : 16;
+  int component[4] = { 0, 0, 0, 0 };
+  for (int i = 0; i < 4; ++i) {
+    if (i < channels) {
+      component[i] = bitdepth;
+    }
+  }
+  return cudaCreateChannelDesc(component[0],
+                               component[1],
+                               component[2],
+                               component[3],
+                               cudaChannelFormatKindFloat);
 }
 
 Texture::Texture(TextureConfig c)
@@ -241,7 +243,7 @@ Texture::put(const float* data)
 }
 
 void
-Texture::put(const unsigned short* data)
+Texture::put(const __half* data)
 {
   if (this->cfg.precision == PRECISION_FLOAT) {
     LOG_WARNING("Putting single precision data into a half precision texture");

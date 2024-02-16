@@ -1,14 +1,14 @@
+#include <cuda_fp16.h>
 #include <iostream>
 #include <math.h>
 #include <torch/extension.h>
 #include <vector>
 
-#include "backprojection.h"
+#include "cfg.h"
 #include "fft.h"
-#include "forward.h"
 #include "log.h"
 #include "noise.h"
-#include "parameter_classes.h"
+#include "radon.h"
 #include "symbolic.h"
 #include "texture.h"
 #include "utils.h"
@@ -22,9 +22,9 @@
   CHECK_CONTIGUOUS(x)
 
 torch::Tensor
-torch_symbolic_forward(const SymbolicFunction& f,
-                       torch::Tensor angles,
-                       const ProjectionCfg& proj)
+symbolic_forward(const symbolic::SymbolicFunction& f,
+                 torch::Tensor angles,
+                 const ProjectionCfg& proj)
 {
   TORCH_CHECK(!angles.device().is_cuda(), "angles must be on CPU");
   CHECK_CONTIGUOUS(angles);
@@ -32,16 +32,16 @@ torch_symbolic_forward(const SymbolicFunction& f,
   const int n_angles = angles.size(0);
   auto y = torch::empty({ n_angles, proj.det_count_u });
 
-  symbolic_forward(
+  symbolic::forward(
     f, proj, angles.data_ptr<float>(), n_angles, y.data_ptr<float>());
 
   return y;
 }
 
 torch::Tensor
-torch_symbolic_discretize(const SymbolicFunction& f,
-                          const int height,
-                          const int width)
+symbolic_discretize(const symbolic::SymbolicFunction& f,
+                    const int height,
+                    const int width)
 {
   auto y = torch::empty({ height, width });
 
@@ -76,25 +76,25 @@ radon_forward(torch::Tensor x,
       options);
 
     if (dtype == torch::kFloat16) {
-      radon_forward_cuda_3d((unsigned short*)x.data_ptr<at::Half>(),
-                            angles.data_ptr<float>(),
-                            (unsigned short*)y.data_ptr<at::Half>(),
-                            tex_cache,
-                            vol_cfg,
-                            proj_cfg,
-                            exec_cfg,
-                            batch_size,
-                            device);
+      radon::forward_cuda_3d((__half*)x.data_ptr<at::Half>(),
+                             angles.data_ptr<float>(),
+                             (__half*)y.data_ptr<at::Half>(),
+                             tex_cache,
+                             vol_cfg,
+                             proj_cfg,
+                             exec_cfg,
+                             batch_size,
+                             device);
     } else {
-      radon_forward_cuda_3d(x.data_ptr<float>(),
-                            angles.data_ptr<float>(),
-                            y.data_ptr<float>(),
-                            tex_cache,
-                            vol_cfg,
-                            proj_cfg,
-                            exec_cfg,
-                            batch_size,
-                            device);
+      radon::forward_cuda_3d(x.data_ptr<float>(),
+                             angles.data_ptr<float>(),
+                             y.data_ptr<float>(),
+                             tex_cache,
+                             vol_cfg,
+                             proj_cfg,
+                             exec_cfg,
+                             batch_size,
+                             device);
     }
     return y;
   } else {
@@ -102,25 +102,25 @@ radon_forward(torch::Tensor x,
       torch::empty({ batch_size, n_angles, proj_cfg.det_count_u }, options);
 
     if (dtype == torch::kFloat16) {
-      radon_forward_cuda((unsigned short*)x.data_ptr<at::Half>(),
-                         angles.data_ptr<float>(),
-                         (unsigned short*)y.data_ptr<at::Half>(),
-                         tex_cache,
-                         vol_cfg,
-                         proj_cfg,
-                         exec_cfg,
-                         batch_size,
-                         device);
+      radon::forward_cuda((__half*)x.data_ptr<at::Half>(),
+                          angles.data_ptr<float>(),
+                          (__half*)y.data_ptr<at::Half>(),
+                          tex_cache,
+                          vol_cfg,
+                          proj_cfg,
+                          exec_cfg,
+                          batch_size,
+                          device);
     } else {
-      radon_forward_cuda(x.data_ptr<float>(),
-                         angles.data_ptr<float>(),
-                         y.data_ptr<float>(),
-                         tex_cache,
-                         vol_cfg,
-                         proj_cfg,
-                         exec_cfg,
-                         batch_size,
-                         device);
+      radon::forward_cuda(x.data_ptr<float>(),
+                          angles.data_ptr<float>(),
+                          y.data_ptr<float>(),
+                          tex_cache,
+                          vol_cfg,
+                          proj_cfg,
+                          exec_cfg,
+                          batch_size,
+                          device);
     }
     return y;
   }
@@ -152,25 +152,25 @@ radon_backward(torch::Tensor x,
       { batch_size, vol_cfg.depth, vol_cfg.height, vol_cfg.width }, options);
 
     if (dtype == torch::kFloat16) {
-      radon_backward_cuda_3d((unsigned short*)x.data_ptr<at::Half>(),
-                             angles.data_ptr<float>(),
-                             (unsigned short*)y.data_ptr<at::Half>(),
-                             tex_cache,
-                             vol_cfg,
-                             proj_cfg,
-                             exec_cfg,
-                             batch_size,
-                             device);
+      radon::backward_cuda_3d((__half*)x.data_ptr<at::Half>(),
+                              angles.data_ptr<float>(),
+                              (__half*)y.data_ptr<at::Half>(),
+                              tex_cache,
+                              vol_cfg,
+                              proj_cfg,
+                              exec_cfg,
+                              batch_size,
+                              device);
     } else {
-      radon_backward_cuda_3d(x.data_ptr<float>(),
-                             angles.data_ptr<float>(),
-                             y.data_ptr<float>(),
-                             tex_cache,
-                             vol_cfg,
-                             proj_cfg,
-                             exec_cfg,
-                             batch_size,
-                             device);
+      radon::backward_cuda_3d(x.data_ptr<float>(),
+                              angles.data_ptr<float>(),
+                              y.data_ptr<float>(),
+                              tex_cache,
+                              vol_cfg,
+                              proj_cfg,
+                              exec_cfg,
+                              batch_size,
+                              device);
     }
     return y;
   } else {
@@ -178,25 +178,25 @@ radon_backward(torch::Tensor x,
       torch::empty({ batch_size, vol_cfg.height, vol_cfg.width }, options);
 
     if (dtype == torch::kFloat16) {
-      radon_backward_cuda((unsigned short*)x.data_ptr<at::Half>(),
-                          angles.data_ptr<float>(),
-                          (unsigned short*)y.data_ptr<at::Half>(),
-                          tex_cache,
-                          vol_cfg,
-                          proj_cfg,
-                          exec_cfg,
-                          batch_size,
-                          device);
+      radon::backward_cuda((__half*)x.data_ptr<at::Half>(),
+                           angles.data_ptr<float>(),
+                           (__half*)y.data_ptr<at::Half>(),
+                           tex_cache,
+                           vol_cfg,
+                           proj_cfg,
+                           exec_cfg,
+                           batch_size,
+                           device);
     } else {
-      radon_backward_cuda(x.data_ptr<float>(),
-                          angles.data_ptr<float>(),
-                          y.data_ptr<float>(),
-                          tex_cache,
-                          vol_cfg,
-                          proj_cfg,
-                          exec_cfg,
-                          batch_size,
-                          device);
+      radon::backward_cuda(x.data_ptr<float>(),
+                           angles.data_ptr<float>(),
+                           y.data_ptr<float>(),
+                           tex_cache,
+                           vol_cfg,
+                           proj_cfg,
+                           exec_cfg,
+                           batch_size,
+                           device);
     }
 
     return y;
@@ -226,7 +226,7 @@ radon_add_noise(torch::Tensor x,
 }
 
 torch::Tensor
-torch_rfft(torch::Tensor x, FFTCache& fft_cache)
+rfft(torch::Tensor x, FFTCache& fft_cache)
 {
   CHECK_INPUT(x);
 
@@ -247,7 +247,7 @@ torch_rfft(torch::Tensor x, FFTCache& fft_cache)
 }
 
 torch::Tensor
-torch_irfft(torch::Tensor x, FFTCache& fft_cache)
+irfft(torch::Tensor x, FFTCache& fft_cache)
 {
   CHECK_INPUT(x);
 
@@ -268,51 +268,40 @@ torch_irfft(torch::Tensor x, FFTCache& fft_cache)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
+
   m.def("forward", &radon_forward, "Radon forward projection");
   m.def("backward", &radon_backward, "Radon back projection");
 
   m.def("add_noise", &radon_add_noise, "Add noise to sinogram");
 
-  m.def("symbolic_forward", &torch_symbolic_forward, "TODO");
-  m.def("symbolic_discretize", &torch_symbolic_discretize, "TODO");
+  m.def("symbolic_forward", &symbolic_forward, "TODO");
+  m.def("symbolic_discretize", &symbolic_discretize, "TODO");
 
-  m.def("rfft", &torch_rfft, "TODO");
-  m.def("irfft", &torch_irfft, "TODO");
+  m.def("rfft", &rfft, "TODO");
+  m.def("irfft", &irfft, "TODO");
 
   m.def("set_log_level", [](const int level) {
     Log::log_level = static_cast<Log::Level>(level);
   });
 
   py::class_<TextureCache>(m, "TextureCache")
-    .
-
-    def(py::init<size_t>())
-
+    .def(py::init<size_t>())
     .def("free", &TextureCache::free);
 
   py::class_<FFTCache>(m, "FFTCache")
-    .
-
-    def(py::init<size_t>())
-
+    .def(py::init<size_t>())
     .def("free", &FFTCache::free);
 
   py::class_<RadonNoiseGenerator>(m, "RadonNoiseGenerator")
-    .
-
-    def(py::init<const uint>())
-
+    .def(py::init<const uint>())
     .def("set_seed",
          (void(RadonNoiseGenerator::*)(const uint)) &
            RadonNoiseGenerator::set_seed)
     .def("free", &RadonNoiseGenerator::free);
 
   py::class_<VolumeCfg>(m, "VolumeCfg")
-    .
-
-    def(
+    .def(
       py::init<int, int, int, float, float, float, float, float, float, bool>())
-
     .def_readonly("depth", &VolumeCfg::depth)
     .def_readonly("height", &VolumeCfg::height)
     .def_readonly("width", &VolumeCfg::width)
@@ -322,14 +311,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     .def_readonly("is_3d", &VolumeCfg::is_3d);
 
   py::class_<ProjectionCfg>(m, "ProjectionCfg")
-    .
-
-    def(py::init<int, float>())
-
-    .
-
-    def(py::init<int, float, int, float, float, float, float, float, int>())
-
+    .def(py::init<int, float>())
+    .def(py::init<int, float, int, float, float, float, float, float, int>())
     .def("is_2d", &ProjectionCfg::is_2d)
     .def("copy", &ProjectionCfg::copy)
     .def_readonly("projection_type", &ProjectionCfg::projection_type)
@@ -343,18 +326,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     .def_readwrite("initial_z", &ProjectionCfg::initial_z)
     .def_readwrite("n_angles", &ProjectionCfg::n_angles);
 
-  py::class_<ExecCfg>(m, "ExecCfg")
-    .
+  py::class_<ExecCfg>(m, "ExecCfg").def(py::init<int, int, int, int>());
 
-    def(py::init<int, int, int, int>());
-
-  py::class_<SymbolicFunction>(m, "SymbolicFunction")
-    .
-
-    def(py::init<float, float>())
-
-    .def("add_gaussian", &SymbolicFunction::add_gaussian)
-    .def("add_ellipse", &SymbolicFunction::add_ellipse)
-    .def("move", &SymbolicFunction::move)
-    .def("scale", &SymbolicFunction::scale);
+  py::class_<symbolic::SymbolicFunction>(m, "SymbolicFunction")
+    .def(py::init<float, float>())
+    .def("add_gaussian", &symbolic::SymbolicFunction::add_gaussian)
+    .def("add_ellipse", &symbolic::SymbolicFunction::add_ellipse)
+    .def("move", &symbolic::SymbolicFunction::move)
+    .def("scale", &symbolic::SymbolicFunction::scale);
 }

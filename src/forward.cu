@@ -3,18 +3,19 @@
 #include <cuda_runtime.h>
 #include <iostream>
 
+#include "cfg.h"
 #include "log.h"
-#include "parameter_classes.h"
+#include "radon.h"
 #include "texture.h"
 #include "utils.h"
 
 template<bool parallel_beam, int channels, typename T>
 __global__ void
-radon_forward_kernel(T* __restrict__ output,
-                     cudaTextureObject_t texture,
-                     const float* __restrict__ angles,
-                     const VolumeCfg vol_cfg,
-                     const ProjectionCfg proj_cfg)
+forward_kernel(T* __restrict__ output,
+               cudaTextureObject_t texture,
+               const float* __restrict__ angles,
+               const VolumeCfg vol_cfg,
+               const ProjectionCfg proj_cfg)
 {
 
   // Calculate texture coordinates
@@ -137,15 +138,15 @@ radon_forward_kernel(T* __restrict__ output,
 
 template<typename T>
 void
-radon_forward_cuda(const T* x,
-                   const float* angles,
-                   T* y,
-                   TextureCache& tex_cache,
-                   const VolumeCfg& vol_cfg,
-                   const ProjectionCfg& proj_cfg,
-                   const ExecCfg& exec_cfg,
-                   const int batch_size,
-                   const int device)
+radon::forward_cuda(const T* x,
+                    const float* angles,
+                    T* y,
+                    TextureCache& tex_cache,
+                    const VolumeCfg& vol_cfg,
+                    const ProjectionCfg& proj_cfg,
+                    const ExecCfg& exec_cfg,
+                    const int batch_size,
+                    const int device)
 {
   constexpr bool is_float = std::is_same<T, float>::value;
   constexpr int precision = is_float ? PRECISION_FLOAT : PRECISION_HALF;
@@ -178,64 +179,59 @@ radon_forward_cuda(const T* x,
   LOG_DEBUG("Grid Size x:" << grid_dim.x << " y:" << grid_dim.y
                            << " z:" << grid_dim.z);
 
-  if (proj_cfg.projection_type == FANBEAM) {
-    if (channels == 1) {
-      radon_forward_kernel<false, 1><<<grid_dim, block_dim>>>(
-        (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
-    } else {
-      if (is_float) {
-        radon_forward_kernel<false, 4><<<grid_dim, block_dim>>>(
-          (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
+  switch (channels) {
+    case 1:
+      if (proj_cfg.projection_type == FANBEAM) {
+        forward_kernel<false, 1, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
       } else {
-        radon_forward_kernel<false, 4><<<grid_dim, block_dim>>>(
-          (__half*)y, tex->texture, angles, vol_cfg, proj_cfg);
+        forward_kernel<true, 1, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
       }
-    }
-  } else {
-    if (channels == 1) {
-      radon_forward_kernel<true, 1><<<grid_dim, block_dim>>>(
-        (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
-    } else {
-      if (is_float) {
-        radon_forward_kernel<true, 4><<<grid_dim, block_dim>>>(
-          (float*)y, tex->texture, angles, vol_cfg, proj_cfg);
+      break;
+    case 4:
+      if (proj_cfg.projection_type == FANBEAM) {
+        forward_kernel<false, 4, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
       } else {
-        radon_forward_kernel<true, 4><<<grid_dim, block_dim>>>(
-          (__half*)y, tex->texture, angles, vol_cfg, proj_cfg);
+        forward_kernel<true, 4, T>
+          <<<grid_dim, block_dim>>>(y, tex->texture, angles, vol_cfg, proj_cfg);
       }
-    }
+      break;
+    default:
+      throw std::invalid_argument("This is an unsupported number of channels!");
   }
 }
 
 template void
-radon_forward_cuda<float>(const float* x,
-                          const float* angles,
-                          float* y,
-                          TextureCache& tex_cache,
-                          const VolumeCfg& vol_cfg,
-                          const ProjectionCfg& proj_cfg,
-                          const ExecCfg& exec_cfg,
-                          const int batch_size,
-                          const int device);
+radon::forward_cuda<float>(const float* x,
+                           const float* angles,
+                           float* y,
+                           TextureCache& tex_cache,
+                           const VolumeCfg& vol_cfg,
+                           const ProjectionCfg& proj_cfg,
+                           const ExecCfg& exec_cfg,
+                           const int batch_size,
+                           const int device);
 
 template void
-radon_forward_cuda<unsigned short>(const unsigned short* x,
-                                   const float* angles,
-                                   unsigned short* y,
-                                   TextureCache& tex_cache,
-                                   const VolumeCfg& vol_cfg,
-                                   const ProjectionCfg& proj_cfg,
-                                   const ExecCfg& exec_cfg,
-                                   const int batch_size,
-                                   const int device);
+radon::forward_cuda<__half>(const __half* x,
+                            const float* angles,
+                            __half* y,
+                            TextureCache& tex_cache,
+                            const VolumeCfg& vol_cfg,
+                            const ProjectionCfg& proj_cfg,
+                            const ExecCfg& exec_cfg,
+                            const int batch_size,
+                            const int device);
 
 template<int channels, typename T>
 __global__ void
-radon_forward_kernel_3d(T* __restrict__ output,
-                        cudaTextureObject_t texture,
-                        const float* __restrict__ angles,
-                        const VolumeCfg vol_cfg,
-                        const ProjectionCfg proj_cfg)
+forward_kernel_3d(T* __restrict__ output,
+                  cudaTextureObject_t texture,
+                  const float* __restrict__ angles,
+                  const VolumeCfg vol_cfg,
+                  const ProjectionCfg proj_cfg)
 {
   // Calculate sensor coordinates in pixels
   // TODO is there an "optimal" map from thread to coordinates that maximizes
@@ -374,15 +370,15 @@ radon_forward_kernel_3d(T* __restrict__ output,
 
 template<typename T>
 void
-radon_forward_cuda_3d(const T* x,
-                      const float* angles,
-                      T* y,
-                      TextureCache& tex_cache,
-                      const VolumeCfg& vol_cfg,
-                      const ProjectionCfg& proj_cfg,
-                      const ExecCfg& exec_cfg,
-                      const int batch_size,
-                      const int device)
+radon::forward_cuda_3d(const T* x,
+                       const float* angles,
+                       T* y,
+                       TextureCache& tex_cache,
+                       const VolumeCfg& vol_cfg,
+                       const ProjectionCfg& proj_cfg,
+                       const ExecCfg& exec_cfg,
+                       const int batch_size,
+                       const int device)
 {
   constexpr bool is_float = std::is_same<T, float>::value;
   constexpr int precision = is_float ? PRECISION_FLOAT : PRECISION_HALF;
@@ -407,14 +403,14 @@ radon_forward_cuda_3d(const T* x,
 
     // Invoke kernel
     if (channels == 1) {
-      radon_forward_kernel_3d<1><<<grid_dim, block_dim>>>(
+      forward_kernel_3d<1><<<grid_dim, block_dim>>>(
         local_y, tex->texture, angles, vol_cfg, proj_cfg);
     } else {
       if (is_float) {
-        radon_forward_kernel_3d<4><<<grid_dim, block_dim>>>(
+        forward_kernel_3d<4><<<grid_dim, block_dim>>>(
           local_y, tex->texture, angles, vol_cfg, proj_cfg);
       } else {
-        radon_forward_kernel_3d<4><<<grid_dim, block_dim>>>(
+        forward_kernel_3d<4><<<grid_dim, block_dim>>>(
           (__half*)local_y, tex->texture, angles, vol_cfg, proj_cfg);
       }
     }
@@ -422,23 +418,23 @@ radon_forward_cuda_3d(const T* x,
 }
 
 template void
-radon_forward_cuda_3d<float>(const float* x,
-                             const float* angles,
-                             float* y,
-                             TextureCache& tex_cache,
-                             const VolumeCfg& vol_cfg,
-                             const ProjectionCfg& proj_cfg,
-                             const ExecCfg& exec_cfg,
-                             const int batch_size,
-                             const int device);
+radon::forward_cuda_3d<float>(const float* x,
+                              const float* angles,
+                              float* y,
+                              TextureCache& tex_cache,
+                              const VolumeCfg& vol_cfg,
+                              const ProjectionCfg& proj_cfg,
+                              const ExecCfg& exec_cfg,
+                              const int batch_size,
+                              const int device);
 
 template void
-radon_forward_cuda_3d<unsigned short>(const unsigned short* x,
-                                      const float* angles,
-                                      unsigned short* y,
-                                      TextureCache& tex_cache,
-                                      const VolumeCfg& vol_cfg,
-                                      const ProjectionCfg& proj_cfg,
-                                      const ExecCfg& exec_cfg,
-                                      const int batch_size,
-                                      const int device);
+radon::forward_cuda_3d<__half>(const __half* x,
+                               const float* angles,
+                               __half* y,
+                               TextureCache& tex_cache,
+                               const VolumeCfg& vol_cfg,
+                               const ProjectionCfg& proj_cfg,
+                               const ExecCfg& exec_cfg,
+                               const int batch_size,
+                               const int device);

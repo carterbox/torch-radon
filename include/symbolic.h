@@ -1,6 +1,10 @@
+#pragma once
+
 #include <vector>
 
-#include "parameter_classes.h"
+#include "cfg.h"
+
+namespace symbolic {
 
 struct Gaussian
 {
@@ -63,8 +67,10 @@ public:
 };
 
 void
-symbolic_forward(const SymbolicFunction& f,
-                 const ProjectionCfg& proj,
-                 const float* angles,
-                 const int n_angles,
-                 float* sinogram);
+forward(const SymbolicFunction& f,
+        const ProjectionCfg& proj,
+        const float* angles,
+        const int n_angles,
+        float* sinogram);
+
+} // namespace symbolic

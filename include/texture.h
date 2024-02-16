@@ -1,11 +1,20 @@
 #ifndef TORCH_RADON_TEXTURE_CACHE_H
 #define TORCH_RADON_TEXTURE_CACHE_H
 
+#include <cuda.h>
+#include <cuda_fp16.h>
+#include <cuda_runtime.h>
+
 #include "cache.h"
 #include "defines.h"
 #include "utils.h"
-#include <cuda.h>
-#include <cuda_runtime.h>
+
+enum TextureType
+{
+  TEX_1D_LAYERED = 0,
+  TEX_2D_LAYERED = 1,
+  TEX_3D = 2
+};
 
 class TextureConfig
 {
@@ -25,7 +34,7 @@ public:
 
   bool operator==(const TextureConfig& o) const;
 
-  int get_texture_type() const;
+  TextureType get_texture_type() const;
 };
 
 TextureConfig
@@ -49,7 +58,7 @@ public:
 
   Texture(TextureConfig c);
   void put(const float* data);
-  void put(const unsigned short* data);
+  void put(const __half* data);
 
   bool matches(TextureConfig& k);
 

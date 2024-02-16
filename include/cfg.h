@@ -1,10 +1,18 @@
-#include "defines.h"
-#include <string>
-
 #ifndef TORCH_RADON_PARAMETER_CLASSES_H
 #define TORCH_RADON_PARAMETER_CLASSES_H
 
+#include "defines.h"
+#include <string>
+
 struct dim3;
+
+enum ProjectionType
+{
+  PARALLEL = 0,
+  FANBEAM = 1,
+  // Cone beam geometry with circular/helical source curve and flat detector
+  CONEFLAT = 2
+};
 
 class VolumeCfg
 {
@@ -52,8 +60,6 @@ public:
   int det_count_v;
   float det_spacing_v;
 
-  int n_angles;
-
   // source and detector distances (for fanbeam and coneflat)
   float s_dist = 0.0;
   float d_dist = 0.0;
@@ -63,6 +69,8 @@ public:
   float initial_z;
 
   int projection_type;
+
+  int n_angles;
 
   ProjectionCfg(int dc_u,
                 float ds_u,
@@ -81,16 +89,22 @@ public:
   ProjectionCfg copy() const;
 };
 
+/**
+ * @brief Hold information for CUDA kernel launches.
+ *
+ */
 class ExecCfg
 {
-public:
+private:
   int bx, by, bz;
 
   int channels;
 
+public:
   ExecCfg(int x, int y, int z, int ch);
 
   dim3 get_block_dim() const;
+
   dim3 get_grid_size(int x, int y = 1, int z = 1) const;
 
   int get_channels(int batch_size) const;
