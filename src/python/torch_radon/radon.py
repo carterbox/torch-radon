@@ -53,7 +53,6 @@ class BaseRadon:
         self,
         x: torch.Tensor,
         angles: torch.Tensor = None,
-        exec_cfg: cuda_backend.ExecCfg = None,
     ):
         r"""Radon forward projection.
 
@@ -82,7 +81,6 @@ class BaseRadon:
             self.tex_cache,
             self.volume.to_cfg(),
             self.projection.cfg,
-            exec_cfg,
         )
 
         return shape_normalizer.unnormalize(y)
@@ -92,7 +90,6 @@ class BaseRadon:
         sinogram,
         angles: torch.Tensor = None,
         volume: Union[Volume2D, Volume3D] = None,
-        exec_cfg: cuda_backend.ExecCfg = None,
     ):
         r"""Radon backward projection.
 
@@ -123,7 +120,6 @@ class BaseRadon:
             self.tex_cache,
             volume.to_cfg(),
             self.projection.cfg,
-            exec_cfg,
         )
 
         return shape_normalizer.unnormalize(y)

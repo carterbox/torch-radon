@@ -25,15 +25,10 @@ class RadonForward(torch.autograd.Function):
         tex_cache: cuda_backend.TextureCache,
         vol_cfg: cuda_backend.VolumeCfg,
         proj_cfg: cuda_backend.ProjectionCfg,
-        exec_cfg: cuda_backend.ExecCfg = None,
     ):
-        exec_cfg = (
-            _generate_config(
-                proj_cfg,
-                image.dtype == torch.half,
-            )
-            if exec_cfg is None
-            else exec_cfg
+        exec_cfg = _generate_config(
+            ctx.proj_cfg,
+            image.dtype == torch.half,
         )
         sinogram = cuda_backend.forward(
             image,
@@ -43,11 +38,10 @@ class RadonForward(torch.autograd.Function):
             proj_cfg,
             exec_cfg,
         )
-        ctx.save_for_backward(angles)
         ctx.tex_cache = tex_cache
         ctx.vol_cfg = vol_cfg
         ctx.proj_cfg = proj_cfg.copy()
-        ctx.exec_cfg = exec_cfg
+        ctx.save_for_backward(angles)
 
         return sinogram
 
@@ -57,13 +51,17 @@ class RadonForward(torch.autograd.Function):
         grad_sinogram: torch.Tensor,
     ):
         (angles,) = ctx.saved_tensors
+        exec_cfg = _generate_config(
+            ctx.proj_cfg,
+            grad_sinogram.dtype == torch.half,
+        )
         grad_image = cuda_backend.backward(
             grad_sinogram,
             angles,
             ctx.tex_cache,
             ctx.vol_cfg,
             ctx.proj_cfg,
-            ctx.exec_cfg,
+            exec_cfg,
         )
         return grad_image, None, None, None, None, None, None
 
@@ -86,15 +84,10 @@ class RadonBackprojection(torch.autograd.Function):
         tex_cache: cuda_backend.TextureCache,
         vol_cfg: cuda_backend.VolumeCfg,
         proj_cfg: cuda_backend.ProjectionCfg,
-        exec_cfg: cuda_backend.ExecCfg = None,
     ):
-        exec_cfg = (
-            _generate_config(
-                proj_cfg,
-                sinogram.dtype == torch.half,
-            )
-            if exec_cfg is None
-            else exec_cfg
+        exec_cfg = _generate_config(
+            ctx.proj_cfg,
+            sinogram.dtype == torch.half,
         )
         image = cuda_backend.backward(
             sinogram,
@@ -104,11 +97,10 @@ class RadonBackprojection(torch.autograd.Function):
             proj_cfg,
             exec_cfg,
         )
-        ctx.save_for_backward(angles)
         ctx.tex_cache = tex_cache
         ctx.vol_cfg = vol_cfg
         ctx.proj_cfg = proj_cfg.copy()
-        ctx.exec_cfg = exec_cfg
+        ctx.save_for_backward(angles)
 
         return image
 
@@ -118,12 +110,16 @@ class RadonBackprojection(torch.autograd.Function):
         grad_image: torch.Tensor,
     ):
         (angles,) = ctx.saved_tensors
+        exec_cfg = _generate_config(
+            ctx.proj_cfg,
+            grad_image.dtype == torch.half,
+        )
         grad_sinogram = cuda_backend.forward(
             grad_image,
             angles,
             ctx.tex_cache,
             ctx.vol_cfg,
             ctx.proj_cfg,
-            ctx.exec_cfg,
+            exec_cfg,
         )
         return grad_sinogram, None, None, None, None, None, None
