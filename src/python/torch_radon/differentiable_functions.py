@@ -3,6 +3,17 @@ import torch
 from . import cuda_backend
 
 
+def _generate_config(
+    proj_cfg: cuda_backend.ProjectionCfg,
+    is_half: bool,
+):
+    if proj_cfg.projection_type == 2:
+        ch = 4 if is_half else 1
+        return cuda_backend.ExecCfg(8, 16, 8, ch)
+
+    return cuda_backend.ExecCfg(16, 16, 1, 4)
+
+
 class RadonForward(torch.autograd.Function):
     """Perform the forward Radon transformtion from real to sinogram space."""
 
@@ -17,11 +28,9 @@ class RadonForward(torch.autograd.Function):
         exec_cfg: cuda_backend.ExecCfg = None,
     ):
         exec_cfg = (
-            cuda_backend.ExecCfg(
-                16,
-                16,
-                1,
-                1,
+            _generate_config(
+                proj_cfg,
+                image.dtype == torch.half,
             )
             if exec_cfg is None
             else exec_cfg
@@ -80,11 +89,9 @@ class RadonBackprojection(torch.autograd.Function):
         exec_cfg: cuda_backend.ExecCfg = None,
     ):
         exec_cfg = (
-            cuda_backend.ExecCfg(
-                16,
-                16,
-                1,
-                1,
+            _generate_config(
+                proj_cfg,
+                sinogram.dtype == torch.half,
             )
             if exec_cfg is None
             else exec_cfg
