@@ -27,7 +27,7 @@ class RadonForward(torch.autograd.Function):
         proj_cfg: cuda_backend.ProjectionCfg,
     ):
         exec_cfg = _generate_config(
-            ctx.proj_cfg,
+            proj_cfg,
             image.dtype == torch.half,
         )
         sinogram = cuda_backend.forward(
@@ -86,7 +86,7 @@ class RadonBackprojection(torch.autograd.Function):
         proj_cfg: cuda_backend.ProjectionCfg,
     ):
         exec_cfg = _generate_config(
-            ctx.proj_cfg,
+            proj_cfg,
             sinogram.dtype == torch.half,
         )
         image = cuda_backend.backward(
