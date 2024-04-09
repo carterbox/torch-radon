@@ -88,12 +88,12 @@ class TestHelper:
             assert_less(forward_error, max_error)
 
     # makes sure that <y, Ax> = < A^T y, x>
-    def backward_check(self, x, y, radon, description, back_max_error):
+    def backward_check(self, x, y, radon, description, back_max_error, angles):
         batch_size = x.shape[0]
 
         test_sino = y / torch.max(y)
         target = torch.sum(test_sino * y, dim=(1, 2)) / (radon.volume.voxel_size[0] * radon.volume.voxel_size[1])
-        bp = radon.backward(test_sino)
+        bp = radon.backward(test_sino, angles)
         value = torch.sum(bp * x, dim=(1, 2))
 
         for i in range(batch_size):
