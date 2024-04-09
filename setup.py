@@ -32,8 +32,9 @@ setup(
             include_dirs=[os.path.abspath("include")],
             extra_compile_args={
                 "cxx": [
-                    # GNU++14 required for hexfloat extension used in rmath.h
-                    "-std=gnu++14",
+                    # GNU++ >=14 required hexfloat extension in rmath.h
+                    # C++ >=17 required pytorch>=2.1
+                    "-std=c++17",
                     "-fvisibility=hidden",
                 ],
                 "nvcc": [
@@ -42,7 +43,7 @@ setup(
                 ],
             },
             libraries=[
-                'cufft',
+                'cufft', 'curand',
             ],
         ),
     ],

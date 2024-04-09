@@ -28,7 +28,6 @@ testing = [
     "astra-toolbox",
     "dxchange",
     "matplotlib",
-    "parameterized",
     "pytest",
     "scikit-image",
 ]

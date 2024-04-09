@@ -15,13 +15,21 @@ jobs:
     strategy:
       max-parallel: 5
       matrix:
-        cuda-version: ['11.2', '11.8']
-        pytorch-version: ['1']
+        cuda-version: ['11.2', '11.8', '12.0']
+        pytorch-version: ['1', '2']
         include:
           - gxx-version: '10'
             cuda-version: '11.2'
+            arch-list: "5.0;6.0;7.0;8.0"
           - gxx-version: '11'
             cuda-version: '11.8'
+            arch-list: "5.0;6.0;7.0;8.0"
+          - gxx-version: '12'
+            cuda-version: '12.0'
+            arch-list: "5.0;6.0;7.0;8.0;9.0"
+        exclude:
+          - pytorch-version: '1'
+            cuda-version: '12.0'
 
     steps:
     - uses: actions/checkout@v3
@@ -62,8 +70,8 @@ jobs:
       run: |
         conda activate torch
         which python
-        export TORCH_CUDA_ARCH_LIST="5.0;6.0;7.0;8.0"
-        CUDA_HOME=/usr/local/cuda-${{ matrix.cuda-version }} pip install . -vv --no-deps --no-build-isolation
+        export TORCH_CUDA_ARCH_LIST="${{ matrix.arch-list }}"
+        CUDA_HOME=/usr/local/cuda-${{ matrix.cuda-version }} pip install . -vv --no-deps --no-build-isolation --no-index
     - name: Test dependencies
       run: |
         conda activate torch
