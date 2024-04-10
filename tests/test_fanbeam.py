@@ -5,10 +5,16 @@ import torch
 
 import torch_radon
 
-from .utils import random_symbolic_function, symbolic_discretize, symbolic_forward, TestHelper, assert_equal
+from .utils import (
+    random_symbolic_function,
+    symbolic_discretize,
+    symbolic_forward,
+    TestHelper,
+    assert_equal,
+)
 
 random.seed(42)
-device = torch.device('cuda')
+device = torch.device("cuda")
 test_helper = TestHelper("fanbeam")
 
 # (batch_size, angles, volume, spacing, det_count, src_dist, det_dist)
@@ -16,10 +22,23 @@ params = []
 
 # check different batch sizes
 for batch_size in [1, 3, 17, 32]:
-    params.append((batch_size, (0, 2*np.pi, 128), None, 2.0, 128, 128, 128))
+    params.append(
+        (
+            batch_size,
+            torch.linspace(0, 2 * np.pi, 128, device="cuda"),
+            None,
+            2.0,
+            128,
+            128,
+            128,
+        )
+    )
 
 # check few and many angles which are not multiples of 16
-for angles in [(0, 2*np.pi, 19), (0, 2*np.pi, 803)]:
+for angles in [
+    torch.linspace(0, 2 * np.pi, 19, device="cuda"),
+    torch.linspace(0, 2 * np.pi, 803, device="cuda"),
+]:
     params.append((4, angles, None, 2.0, 128, 128, 128))
 
 # change volume size
@@ -27,27 +46,53 @@ for height, width in [(128, 256), (256, 128), (75, 149), (81, 81)]:
     s = max(height, width)
     volume = torch_radon.volumes.Volume2D()
     volume.set_size(height, width)
-    params.append((4, (0, 2*np.pi, 64), volume, 2.0, s, s, s))
+    params.append(
+        (4, torch.linspace(0, 2 * np.pi, 64, device="cuda"), volume, 2.0, s, s, s)
+    )
 
 # change volume scale and center
 for center in [(0, 0), (17, -25), (53, 49)]:
     for voxel_size in [(1, 1), (0.75, 0.75), (1.5, 1.5), (0.7, 1.3), (1.3, 0.7)]:
-        det_count = int(179 * max(voxel_size[0], 1) * max(voxel_size[1], 1) * np.sqrt(2))
+        det_count = int(
+            179 * max(voxel_size[0], 1) * max(voxel_size[1], 1) * np.sqrt(2)
+        )
         volume = torch_radon.volumes.Volume2D(center, voxel_size)
         volume.set_size(179, 123)
-        params.append((4, (0, 2*np.pi, 128), volume, 2.0, det_count, det_count, det_count))
+        params.append(
+            (
+                4,
+                torch.linspace(0, 2 * np.pi, 128, device="cuda"),
+                volume,
+                2.0,
+                det_count,
+                det_count,
+                det_count,
+            )
+        )
 
 for spacing in [1.0, 0.5, 1.3, 2.0]:
     for det_count in [79, 128, 243]:
         for src_dist, det_dist in [(128, 128), (64, 128), (128, 64), (503, 503)]:
             volume = torch_radon.volumes.Volume2D()
             volume.set_size(128, 128)
-            params.append((4, (0, 2*np.pi, 128), volume, spacing, det_count, src_dist, det_dist))
+            params.append(
+                (
+                    4,
+                    torch.linspace(0, 2 * np.pi, 128, device="cuda"),
+                    volume,
+                    spacing,
+                    det_count,
+                    src_dist,
+                    det_dist,
+                )
+            )
 
 # params.append((4, (0, 6.283185307179586, 128), 128, 2.0, 243, 128, 64))
 
 
-@pytest.mark.parametrize('batch_size, angles, volume, spacing, det_count, src_dist, det_dist', params)
+@pytest.mark.parametrize(
+    "batch_size, angles, volume, spacing, det_count, src_dist, det_dist", params
+)
 def test_error(batch_size, angles, volume, spacing, det_count, src_dist, det_dist):
     if volume is None:
         volume = torch_radon.volumes.Volume2D()
@@ -72,7 +117,7 @@ def test_error(batch_size, angles, volume, spacing, det_count, src_dist, det_dis
     test_helper.compare_images(y, ty, max_error, description)
 
     back_max_error = 1e-3
-    test_helper.backward_check(tx, ty, radon, description, back_max_error)
+    test_helper.backward_check(tx, ty, radon, description, back_max_error, angles)
 
     if batch_size % 4 == 0:
         ty = radon.forward(tx.half())
