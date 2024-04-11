@@ -11,7 +11,8 @@ from .projection import Projection
 from .utils import normalize_shape, ShapeNormalizer, expose_projection_attributes
 from .volumes import Volume2D, Volume3D
 
-warnings.simplefilter('default')
+warnings.simplefilter("default")
+
 
 class ExecCfgGeneratorBase:
     def __init__(self):
@@ -26,11 +27,21 @@ class ExecCfgGeneratorBase:
 
 
 class BaseRadon:
-    def __init__(self, angles, volume, projection):
+    def __init__(
+        self,
+        angles,
+        volume,
+        projection,
+    ):
         # allows angles to be specified as (start_angle, end_angle, n_angles)
         if isinstance(angles, tuple) and len(angles) == 3:
             start_angle, end_angle, n_angles = angles
-            angles = np.linspace(start_angle, end_angle, n_angles, endpoint=False)
+            angles = np.linspace(
+                start_angle,
+                end_angle,
+                n_angles,
+                endpoint=False,
+            )
 
         # make sure that angles are a PyTorch tensor
         if not isinstance(angles, torch.Tensor):
@@ -55,12 +66,18 @@ class BaseRadon:
             x = x.contiguous()
 
         if x.dtype == torch.float16:
-            assert x.size(
-                0) % 4 == 0, f"Batch size must be multiple of 4 when using half precision. Got batch size {x.size(0)}"
+            assert (
+                x.size(0) % 4 == 0
+            ), f"Batch size must be multiple of 4 when using half precision. Got batch size {x.size(0)}"
 
         return x
 
-    def forward(self, x: torch.Tensor, angles: torch.Tensor = None, exec_cfg: cuda_backend.ExecCfg = None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        angles: torch.Tensor = None,
+        exec_cfg: cuda_backend.ExecCfg = None,
+    ):
         r"""Radon forward projection.
 
         :param x: PyTorch GPU tensor.
@@ -82,12 +99,25 @@ class BaseRadon:
 
         self.projection.cfg.n_angles = len(angles)
 
-        y = RadonForward.apply(x, angles, self.tex_cache, self.volume.to_cfg(), self.projection.cfg,
-                               self.exec_cfg_generator, exec_cfg)
+        y = RadonForward.apply(
+            x,
+            angles,
+            self.tex_cache,
+            self.volume.to_cfg(),
+            self.projection.cfg,
+            self.exec_cfg_generator,
+            exec_cfg,
+        )
 
         return shape_normalizer.unnormalize(y)
 
-    def backward(self, sinogram, angles: torch.Tensor = None, volume: Union[Volume2D, Volume3D] = None, exec_cfg: cuda_backend.ExecCfg = None):
+    def backward(
+        self,
+        sinogram,
+        angles: torch.Tensor = None,
+        volume: Union[Volume2D, Volume3D] = None,
+        exec_cfg: cuda_backend.ExecCfg = None,
+    ):
         r"""Radon backward projection.
 
         :param sinogram: PyTorch GPU tensor containing sinograms.
@@ -98,7 +128,9 @@ class BaseRadon:
         sinogram = self._check_input(sinogram)
         volume = self.volume if volume is None else volume
 
-        assert volume.has_size(), "Must use forward before calling backward or specify a volume"
+        assert (
+            volume.has_size()
+        ), "Must use forward before calling backward or specify a volume"
 
         self._move_parameters_to_device(sinogram.device)
 
@@ -109,13 +141,24 @@ class BaseRadon:
 
         self.projection.cfg.n_angles = len(angles)
 
-        y = RadonBackprojection.apply(sinogram, angles, self.tex_cache, volume.to_cfg(), self.projection.cfg,
-                                      self.exec_cfg_generator, exec_cfg)
+        y = RadonBackprojection.apply(
+            sinogram,
+            angles,
+            self.tex_cache,
+            volume.to_cfg(),
+            self.projection.cfg,
+            self.exec_cfg_generator,
+            exec_cfg,
+        )
 
         return shape_normalizer.unnormalize(y)
 
     @normalize_shape(2)
-    def filter_sinogram(self, sinogram, filter_name="ramp"):
+    def filter_sinogram(
+        self,
+        sinogram,
+        filter_name="ramp",
+    ):
         size = sinogram.size(2)
         n_angles = sinogram.size(1)
 
@@ -124,14 +167,18 @@ class BaseRadon:
         pad = padded_size - size
         padded_sinogram = torch.nn.functional.pad(sinogram.float(), (0, pad, 0, 0))
 
-        sino_fft = cuda_backend.rfft(padded_sinogram, self.fft_cache) / np.sqrt(padded_size)
+        sino_fft = cuda_backend.rfft(padded_sinogram, self.fft_cache) / np.sqrt(
+            padded_size
+        )
 
         # get filter and apply
         f = self.fourier_filters.get(padded_size, filter_name, sinogram.device)
         filtered_sino_fft = sino_fft * f
 
         # Inverse fft
-        filtered_sinogram = cuda_backend.irfft(filtered_sino_fft, self.fft_cache) / np.sqrt(padded_size)
+        filtered_sinogram = cuda_backend.irfft(
+            filtered_sino_fft, self.fft_cache
+        ) / np.sqrt(padded_size)
         filtered_sinogram = filtered_sinogram[:, :, :-pad] * (np.pi / (2 * n_angles))
 
         return filtered_sinogram.to(dtype=sinogram.dtype)
@@ -157,9 +204,13 @@ class ParallelBeam(BaseRadon):
 
     """
 
-    def __init__(self, det_count: int, angles: Union[list, np.array, torch.Tensor, tuple],
-                 det_spacing: float = 1.0, volume: Volume2D = None):
-
+    def __init__(
+        self,
+        det_count: int,
+        angles: Union[list, np.array, torch.Tensor, tuple],
+        det_spacing: float = 1.0,
+        volume: Volume2D = None,
+    ):
         if volume is None:
             volume = Volume2D()
 
@@ -168,10 +219,9 @@ class ParallelBeam(BaseRadon):
         super().__init__(angles, volume, projection)
 
 
-expose_projection_attributes(ParallelBeam, [
-    ("det_count", "det_count_u"),
-    ("det_spacing", "det_spacing_u")
-])
+expose_projection_attributes(
+    ParallelBeam, [("det_count", "det_count_u"), ("det_spacing", "det_spacing_u")]
+)
 
 
 class FanBeam(BaseRadon):
@@ -196,10 +246,15 @@ class FanBeam(BaseRadon):
 
     """
 
-    def __init__(self, det_count: int, angles: Union[list, np.array, torch.Tensor, tuple],
-                 src_dist: float = None, det_dist: float = None, det_spacing: float = None,
-                 volume: Volume2D = None):
-
+    def __init__(
+        self,
+        det_count: int,
+        angles: Union[list, np.array, torch.Tensor, tuple],
+        src_dist: float = None,
+        det_dist: float = None,
+        det_spacing: float = None,
+        volume: Volume2D = None,
+    ):
         if src_dist is None:
             src_dist = det_count
 
@@ -218,11 +273,19 @@ class FanBeam(BaseRadon):
 
 
 class ConeBeam(BaseRadon):
-    def __init__(self, det_count_u: int, angles: Union[list, np.array, torch.Tensor, tuple],
-                 src_dist: float = None, det_dist: float = None, det_count_v: int = -1, det_spacing_u: float = 1.0,
-                 det_spacing_v: float = -1.0, pitch: float = 0.0, base_z: float = 0.0,
-                 volume: Volume3D = None):
-
+    def __init__(
+        self,
+        det_count_u: int,
+        angles: Union[list, np.array, torch.Tensor, tuple],
+        src_dist: float = None,
+        det_dist: float = None,
+        det_count_v: int = -1,
+        det_spacing_u: float = 1.0,
+        det_spacing_v: float = -1.0,
+        pitch: float = 0.0,
+        base_z: float = 0.0,
+        volume: Volume3D = None,
+    ):
         if src_dist is None:
             src_dist = det_count_u
 
@@ -235,15 +298,30 @@ class ConeBeam(BaseRadon):
         if volume is None:
             volume = Volume3D()
 
-        projection = Projection.coneflat(src_dist, det_dist, det_count_u, det_spacing_u,
-                                         det_count_v, det_spacing_v, pitch, base_z)
+        projection = Projection.coneflat(
+            src_dist,
+            det_dist,
+            det_count_u,
+            det_spacing_u,
+            det_count_v,
+            det_spacing_v,
+            pitch,
+            base_z,
+        )
 
         super().__init__(angles, volume, projection)
 
 
-expose_projection_attributes(ConeBeam, [
-    "det_count_u", "det_count_v",
-    "det_spacing_u", "det_spacing_v",
-    ("src_dist", "s_dist"), ("det_dist", "d_dist"),
-    "pitch", ("base_z", "initial_z")
-])
+expose_projection_attributes(
+    ConeBeam,
+    [
+        "det_count_u",
+        "det_count_v",
+        "det_spacing_u",
+        "det_spacing_v",
+        ("src_dist", "s_dist"),
+        ("det_dist", "d_dist"),
+        "pitch",
+        ("base_z", "initial_z"),
+    ],
+)
