@@ -3,6 +3,7 @@ import warnings
 
 import numpy as np
 import torch
+import torch.fft
 
 from . import cuda_backend
 from .differentiable_functions import RadonForward, RadonBackprojection
@@ -166,18 +167,14 @@ class BaseRadon:
         pad = padded_size - size
         padded_sinogram = torch.nn.functional.pad(sinogram.float(), (0, pad, 0, 0))
 
-        sino_fft = cuda_backend.rfft(padded_sinogram, self.fft_cache) / np.sqrt(
-            padded_size
-        )
+        sino_fft = torch.fft.rfft(padded_sinogram) / np.sqrt(padded_size)
 
         # get filter and apply
         f = self.fourier_filters.get(padded_size, filter_name, sinogram.device)
         filtered_sino_fft = sino_fft * f
 
         # Inverse fft
-        filtered_sinogram = cuda_backend.irfft(
-            filtered_sino_fft, self.fft_cache
-        ) / np.sqrt(padded_size)
+        filtered_sinogram = torch.fft.irfft(filtered_sino_fft) / np.sqrt(padded_size)
         filtered_sinogram = filtered_sinogram[:, :, :-pad] * (np.pi / (2 * n_angles))
 
         return filtered_sinogram.to(dtype=sinogram.dtype)
