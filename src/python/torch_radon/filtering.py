@@ -2,27 +2,20 @@ import typing
 
 import numpy as np
 import torch
-import torch.fft
-
-try:
-    import scipy.fft
-
-    fftmodule = scipy.fft
-except ImportError:
-    import numpy.fft
-
-    fftmodule = numpy.fft
-
 
 class FourierFilters:
     def __init__(self):
         self.cache = dict()
 
-    def get(self, size: int, filter_name: str, device):
+    def get(self, size: int, filter_name: str, device) -> torch.Tensor:
         key = (size, filter_name)
 
         if key not in self.cache:
-            ff = torch.FloatTensor(self.construct_fourier_filter(size, filter_name)).view(1, 1, -1, 1).to(device)
+            ff = (
+                torch.FloatTensor(self.construct_fourier_filter(size, filter_name))
+                .view(1, 1, -1)
+                .to(device)
+            )
             self.cache[key] = ff
 
         return self.cache[key].to(device)
@@ -73,21 +66,21 @@ class FourierFilters:
         # Computing the ramp filter from the fourier transform of its
         # frequency domain representation lessens artifacts and removes a
         # small bias as explained in [1], Chap 3. Equation 61
-        fourier_filter = 2 * np.real(fftmodule.fft(f))  # ramp filter
+        fourier_filter = 2 * np.real(np.fft.fft(f))  # ramp filter
         if filter_name == "ramp" or filter_name == "ram-lak":
             pass
         elif filter_name == "shepp-logan":
             # Start from first element to avoid divide by zero
-            omega = np.pi * fftmodule.fftfreq(size)[1:]
+            omega = np.pi * np.fft.fftfreq(size)[1:]
             fourier_filter[1:] *= np.sin(omega) / omega
         elif filter_name == "cosine":
             freq = np.linspace(0, np.pi, size, endpoint=False)
-            cosine_filter = fftmodule.fftshift(np.sin(freq))
+            cosine_filter = np.fft.fftshift(np.sin(freq))
             fourier_filter *= cosine_filter
         elif filter_name == "hamming":
-            fourier_filter *= fftmodule.fftshift(np.hamming(size))
+            fourier_filter *= np.fft.fftshift(np.hamming(size))
         elif filter_name == "hann":
-            fourier_filter *= fftmodule.fftshift(np.hanning(size))
+            fourier_filter *= np.fft.fftshift(np.hanning(size))
         else:
             print(
                 f"[TorchRadon] Error, unknown filter type '{filter_name}', available filters are: 'ramp', 'shepp-logan', 'cosine', 'hamming', 'hann'")
