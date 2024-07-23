@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "cfg.h"
-#include "fft.h"
 #include "log.h"
 #include "noise.h"
 #include "radon.h"
@@ -225,47 +224,6 @@ radon_add_noise(torch::Tensor x,
                             device);
 }
 
-torch::Tensor
-rfft(torch::Tensor x, FFTCache& fft_cache)
-{
-  CHECK_INPUT(x);
-
-  const int device = x.device().index();
-  const int rows = x.size(0) * x.size(1);
-  const int cols = x.size(2);
-
-  // create output tensor
-  auto options =
-    torch::TensorOptions().dtype(torch::kFloat32).device(x.device());
-
-  auto y =
-    torch::empty({ x.size(0), x.size(1), x.size(2) / 2 + 1, 2 }, options);
-
-  FFT(fft_cache, x.data_ptr<float>(), device, rows, cols, y.data_ptr<float>());
-
-  return y;
-}
-
-torch::Tensor
-irfft(torch::Tensor x, FFTCache& fft_cache)
-{
-  CHECK_INPUT(x);
-
-  const int device = x.device().index();
-  const int rows = x.size(0) * x.size(1);
-  const int cols = (x.size(2) - 1) * 2;
-
-  // create output tensor
-  auto options =
-    torch::TensorOptions().dtype(torch::kFloat32).device(x.device());
-
-  auto y = torch::empty({ x.size(0), x.size(1), cols }, options);
-
-  iFFT(fft_cache, x.data_ptr<float>(), device, rows, cols, y.data_ptr<float>());
-
-  return y;
-}
-
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
 
@@ -277,9 +235,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
   m.def("symbolic_forward", &symbolic_forward, "TODO");
   m.def("symbolic_discretize", &symbolic_discretize, "TODO");
 
-  m.def("rfft", &rfft, "TODO");
-  m.def("irfft", &irfft, "TODO");
-
   m.def("set_log_level", [](const int level) {
     Log::log_level = static_cast<Log::Level>(level);
   });
@@ -287,10 +242,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
   py::class_<TextureCache>(m, "TextureCache")
     .def(py::init<size_t>())
     .def("free", &TextureCache::free);
-
-  py::class_<FFTCache>(m, "FFTCache")
-    .def(py::init<size_t>())
-    .def("free", &FFTCache::free);
 
   py::class_<RadonNoiseGenerator>(m, "RadonNoiseGenerator")
     .def(py::init<const uint>())

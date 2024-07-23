@@ -54,7 +54,6 @@ class BaseRadon:
 
         # caches used to avoid reallocation of resources
         self.tex_cache = cuda_backend.TextureCache(8)
-        self.fft_cache = cuda_backend.FFTCache(8)
         self.fourier_filters = FourierFilters()
 
     def _move_parameters_to_device(self, device):
