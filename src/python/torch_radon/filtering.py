@@ -1,3 +1,5 @@
+import typing
+
 import numpy as np
 import torch
 import torch.fft
@@ -26,7 +28,16 @@ class FourierFilters:
         return self.cache[key].to(device)
 
     @staticmethod
-    def construct_fourier_filter(size, filter_name):
+    def construct_fourier_filter(
+        size: int,
+        filter_name: typing.Literal[
+            "ramp",
+            "shepp-logan",
+            "cosine",
+            "hamming",
+            "hann",
+        ],
+    ):
         """Construct the Fourier filter.
 
         This computation lessens artifacts and removes a small bias as

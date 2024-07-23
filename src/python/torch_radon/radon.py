@@ -1,4 +1,4 @@
-from typing import Union
+import typing
 import warnings
 
 import numpy as np
@@ -30,9 +30,9 @@ class ExecCfgGeneratorBase:
 class BaseRadon:
     def __init__(
         self,
-        angles,
-        volume,
-        projection,
+        angles: typing.Union[torch.Tensor, typing.Tuple[int, int, int]],
+        volume: typing.Union[Volume2D, Volume3D],
+        projection: Projection,
     ):
         # allows angles to be specified as (start_angle, end_angle, n_angles)
         if isinstance(angles, tuple) and len(angles) == 3:
@@ -115,7 +115,7 @@ class BaseRadon:
         self,
         sinogram,
         angles: torch.Tensor = None,
-        volume: Union[Volume2D, Volume3D] = None,
+        volume: typing.Union[Volume2D, Volume3D] = None,
         exec_cfg: cuda_backend.ExecCfg = None,
     ):
         r"""Radon backward projection.
@@ -156,8 +156,10 @@ class BaseRadon:
     @normalize_shape(2)
     def filter_sinogram(
         self,
-        sinogram,
-        filter_name="ramp",
+        sinogram: torch.Tensor,
+        filter_name: typing.Literal[
+            "ramp", "shepp-logan", "cosine", "hamming", "hann"
+        ] = "ramp",
     ):
         size = sinogram.size(2)
         n_angles = sinogram.size(1)
@@ -167,14 +169,14 @@ class BaseRadon:
         pad = padded_size - size
         padded_sinogram = torch.nn.functional.pad(sinogram.float(), (0, pad, 0, 0))
 
-        sino_fft = torch.fft.rfft(padded_sinogram) / np.sqrt(padded_size)
+        sino_fft = torch.fft.rfft2(padded_sinogram) / np.sqrt(padded_size)
 
         # get filter and apply
         f = self.fourier_filters.get(padded_size, filter_name, sinogram.device)
         filtered_sino_fft = sino_fft * f
 
         # Inverse fft
-        filtered_sinogram = torch.fft.irfft(filtered_sino_fft) / np.sqrt(padded_size)
+        filtered_sinogram = torch.fft.irfft2(filtered_sino_fft) / np.sqrt(padded_size)
         filtered_sinogram = filtered_sinogram[:, :, :-pad] * (np.pi / (2 * n_angles))
 
         return filtered_sinogram.to(dtype=sinogram.dtype)
@@ -203,7 +205,7 @@ class ParallelBeam(BaseRadon):
     def __init__(
         self,
         det_count: int,
-        angles: Union[list, np.array, torch.Tensor, tuple],
+        angles: typing.Union[list, np.array, torch.Tensor, tuple],
         det_spacing: float = 1.0,
         volume: Volume2D = None,
     ):
@@ -245,7 +247,7 @@ class FanBeam(BaseRadon):
     def __init__(
         self,
         det_count: int,
-        angles: Union[list, np.array, torch.Tensor, tuple],
+        angles: typing.Union[list, np.array, torch.Tensor, tuple],
         src_dist: float = None,
         det_dist: float = None,
         det_spacing: float = None,
@@ -272,7 +274,7 @@ class ConeBeam(BaseRadon):
     def __init__(
         self,
         det_count_u: int,
-        angles: Union[list, np.array, torch.Tensor, tuple],
+        angles: typing.Union[list, np.array, torch.Tensor, tuple],
         src_dist: float = None,
         det_dist: float = None,
         det_count_v: int = -1,
