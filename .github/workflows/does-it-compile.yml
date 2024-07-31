@@ -40,7 +40,7 @@ jobs:
         sudo rm cuda-keyring_1.0-1_all.deb
         sudo apt-get update
         cversion=${{ matrix.cuda-version }}
-        sudo apt-get -y install cuda-minimal-build-${cversion//./-} libcufft-dev-${cversion//./-} libcurand-dev-${cversion//./-}
+        sudo apt-get -y install cuda-minimal-build-${cversion//./-} libcurand-dev-${cversion//./-}
         sudo dpkg -L cuda-nvcc-${cversion//./-}
     - name: Check GCC toolchain
       run: |

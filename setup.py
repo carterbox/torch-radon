@@ -20,7 +20,6 @@ setup(
             name="torch_radon_cuda",
             sources=[
                 "src/backward.cu",
-                "src/fft.cu",
                 "src/forward.cu",
                 "src/log.cpp",
                 "src/noise.cu",
@@ -43,7 +42,7 @@ setup(
                 ],
             },
             libraries=[
-                'cufft', 'curand',
+                'curand',
             ],
         ),
     ],
