@@ -1,4 +1,3 @@
-from turtle import width
 from .cuda_backend import VolumeCfg
 
 

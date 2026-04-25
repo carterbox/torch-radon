@@ -82,7 +82,9 @@ class FourierFilters:
         elif filter_name == "hann":
             fourier_filter *= np.fft.fftshift(np.hanning(size))
         else:
-            print(
-                f"[TorchRadon] Error, unknown filter type '{filter_name}', available filters are: 'ramp', 'shepp-logan', 'cosine', 'hamming', 'hann'")
+            raise ValueError(
+                f"Unknown filter type '{filter_name}'. Available filters are: "
+                "'ramp', 'shepp-logan', 'cosine', 'hamming', 'hann'."
+            )
 
         return fourier_filter[:size//2+1]

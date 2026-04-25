@@ -309,6 +309,111 @@ class ConeBeam(BaseRadon):
 
         super().__init__(angles, volume, projection)
 
+    def filter_sinogram(
+        self,
+        sinogram: torch.Tensor,
+        filter_name: typing.Literal[
+            "ramp", "shepp-logan", "cosine", "hamming", "hann"
+        ] = "ramp",
+        v_chunk_size: typing.Optional[int] = 32,
+    ):
+        r"""Filter cone-beam projections along the detector-u axis.
+
+        The input shape is ``[..., angles, det_v, det_u]``. Filtering is
+        independent for each detector-v row, so processing detector-v in chunks
+        is mathematically equivalent to filtering all rows at once while using
+        less peak memory for the FFT intermediates.
+        """
+        shape_normalizer = ShapeNormalizer(3)
+        sinogram = shape_normalizer.normalize(sinogram)
+
+        batch_size, n_angles, det_v, det_u = sinogram.shape
+        chunk_size = det_v if v_chunk_size is None else int(v_chunk_size)
+        if chunk_size <= 0:
+            raise ValueError(f"v_chunk_size must be positive or None, got {v_chunk_size}")
+
+        filtered = torch.empty_like(sinogram)
+        for start in range(0, det_v, chunk_size):
+            end = min(start + chunk_size, det_v)
+            chunk = sinogram[:, :, start:end, :]
+            chunk = chunk.permute(0, 2, 1, 3).reshape(
+                batch_size * (end - start),
+                n_angles,
+                det_u,
+            )
+            chunk = super().filter_sinogram(chunk, filter_name=filter_name)
+            chunk = chunk.reshape(batch_size, end - start, n_angles, det_u)
+            filtered[:, :, start:end, :].copy_(chunk.permute(0, 2, 1, 3))
+
+        return shape_normalizer.unnormalize(filtered)
+
+    def fdk_preweight(self, sinogram: torch.Tensor):
+        r"""Apply the standard cone-beam FDK distance preweight."""
+        shape_normalizer = ShapeNormalizer(3)
+        sinogram = shape_normalizer.normalize(sinogram)
+
+        det_v = sinogram.shape[-2]
+        det_u = sinogram.shape[-1]
+        device = sinogram.device
+        dtype = sinogram.dtype
+
+        u = (
+            torch.arange(det_u, device=device, dtype=dtype)
+            - (det_u - 1) / 2
+        ) * self.det_spacing_u
+        v = (
+            torch.arange(det_v, device=device, dtype=dtype)
+            - (det_v - 1) / 2
+        ) * self.det_spacing_v
+        vv, uu = torch.meshgrid(v, u, indexing="ij")
+
+        source_to_detector = self.src_dist + self.det_dist
+        weight = source_to_detector / torch.sqrt(source_to_detector**2 + uu**2 + vv**2)
+        weight = weight * (source_to_detector / self.src_dist)
+
+        weighted = sinogram * weight.view(1, 1, det_v, det_u)
+        return shape_normalizer.unnormalize(weighted)
+
+    def fdk(
+        self,
+        sinogram: torch.Tensor,
+        filter_name: typing.Literal[
+            "ramp", "shepp-logan", "cosine", "hamming", "hann"
+        ] = "ramp",
+        v_chunk_size: typing.Optional[int] = 32,
+        angles: torch.Tensor = None,
+        volume: Volume3D = None,
+        exec_cfg: cuda_backend.ExecCfg = None,
+    ):
+        r"""FDK reconstruction for circular cone-beam projections.
+
+        The expected sinogram shape is ``[..., angles, det_v, det_u]``. The
+        returned tensor has shape ``[..., depth, height, width]``.
+        """
+        sinogram = self.fdk_preweight(sinogram)
+        sinogram = self.filter_sinogram(
+            sinogram,
+            filter_name=filter_name,
+            v_chunk_size=v_chunk_size,
+        )
+
+        # The ramp filter is defined on physical detector-u coordinates.
+        sinogram = sinogram / self.det_spacing_u
+        reconstruction = self.backward(
+            sinogram,
+            angles=angles,
+            volume=volume,
+            exec_cfg=exec_cfg,
+        )
+
+        source_to_detector = self.src_dist + self.det_dist
+        bp_scale = (
+            self.det_spacing_u
+            * self.det_spacing_v
+            * (self.src_dist / source_to_detector) ** 2
+        )
+        return reconstruction * bp_scale
+
 
 expose_projection_attributes(
     ConeBeam,
