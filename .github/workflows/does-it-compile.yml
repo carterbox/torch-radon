@@ -8,36 +8,32 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         shell: bash -el {0}
     strategy:
       max-parallel: 5
       matrix:
-        cuda-version: ['11.2', '11.8', '12.0']
-        pytorch-version: ['1', '2']
+        cuda-version: ['12.6', '13.0', '13.2']
+        pytorch-version: ['2.10', '2.13']
         include:
-          - gxx-version: '10'
-            cuda-version: '11.2'
-            arch-list: "5.0;6.0;7.0;8.0"
-          - gxx-version: '11'
-            cuda-version: '11.8'
-            arch-list: "5.0;6.0;7.0;8.0"
           - gxx-version: '12'
-            cuda-version: '12.0'
+            cuda-version: '12.6'
             arch-list: "5.0;6.0;7.0;8.0;9.0"
-        exclude:
-          - pytorch-version: '1'
-            cuda-version: '12.0'
-
+          - gxx-version: '14'
+            cuda-version: '13.0'
+            arch-list: "8.0;9.0;10.0;12.0"
+          - gxx-version: '14'
+            cuda-version: '13.2'
+            arch-list: "8.0;9.0;10.0;12.0"
     steps:
     - uses: actions/checkout@v3
     - name: Install the CUDA toolkit
       run: |
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
-        sudo dpkg -i cuda-keyring_1.0-1_all.deb
-        sudo rm cuda-keyring_1.0-1_all.deb
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        sudo rm cuda-keyring_1.1-1_all.deb
         sudo apt-get update
         cversion=${{ matrix.cuda-version }}
         sudo apt-get -y install cuda-minimal-build-${cversion//./-} libcurand-dev-${cversion//./-}
