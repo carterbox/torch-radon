@@ -8,70 +8,61 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash -el {0}
     strategy:
       max-parallel: 5
       matrix:
-        cuda-version: ['11.2', '11.8', '12.0']
-        pytorch-version: ['1', '2']
+        cuda-version: ['12.6', '13.0', '13.2']
+        pytorch-version: ['2']
         include:
-          - gxx-version: '10'
-            cuda-version: '11.2'
-            arch-list: "5.0;6.0;7.0;8.0"
-          - gxx-version: '11'
-            cuda-version: '11.8'
-            arch-list: "5.0;6.0;7.0;8.0"
           - gxx-version: '12'
-            cuda-version: '12.0'
+            cuda-version: '12.6'
             arch-list: "5.0;6.0;7.0;8.0;9.0"
-        exclude:
-          - pytorch-version: '1'
-            cuda-version: '12.0'
-
+          - gxx-version: '14'
+            cuda-version: '13.0'
+            arch-list: "8.0;9.0;10.0;12.0"
+          - gxx-version: '14'
+            cuda-version: '13.2'
+            arch-list: "8.0;9.0;10.0;12.0"
     steps:
     - uses: actions/checkout@v3
-    - name: Install the CUDA toolkit
-      run: |
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
-        sudo dpkg -i cuda-keyring_1.0-1_all.deb
-        sudo rm cuda-keyring_1.0-1_all.deb
-        sudo apt-get update
-        cversion=${{ matrix.cuda-version }}
-        sudo apt-get -y install cuda-minimal-build-${cversion//./-} libcurand-dev-${cversion//./-}
-        sudo dpkg -L cuda-nvcc-${cversion//./-}
-    - name: Check GCC toolchain
-      run: |
-        gcc --version
-        g++ --version
-    - name: Check NVCC toolchain
-      run: |
-        /usr/local/cuda-${{ matrix.cuda-version }}/bin/nvcc --version
     - uses: conda-incubator/setup-miniconda@v2
     - name: Install dependencies
       run: >
         CONDA_OVERRIDE_CUDA=${{ matrix.cuda-version }}
         conda create
+        --quiet
         -n torch
         -c conda-forge
         --solver=libmamba
         cuda-version=${{ matrix.cuda-version }}
         pytorch-gpu=${{ matrix.pytorch-version }}
+        gcc_linux-64=${{ matrix.gxx-version }}
         gxx_linux-64=${{ matrix.gxx-version }}
+        cuda-nvcc_linux-64=${{ matrix.cuda-version }}
+        cuda-cudart-dev
+        libcurand-dev
         scipy
         numpy
         pip
         setuptools
         ninja
         cmake
+        setuptools-scm
+        setuptools
+        toml
     - name: Build torch-radon
       run: |
         conda activate torch
         which python
+        gcc --version
+        g++ --version
+        nvcc --version
         export TORCH_CUDA_ARCH_LIST="${{ matrix.arch-list }}"
-        CUDA_HOME=/usr/local/cuda-${{ matrix.cuda-version }} pip install . -vv --no-deps --no-build-isolation --no-index
+        pip install . -vv --no-deps --no-build-isolation --no-index
     - name: Test dependencies
       run: |
         conda activate torch
