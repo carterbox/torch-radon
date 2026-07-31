@@ -24,8 +24,8 @@ backward_kernel(T* __restrict__ output,
   const float cy = vol_cfg.height / 2.0f;
   const float cr = proj_cfg.det_count_u / 2.0f;
 
-  const float dx = (float(x) - cx) * vol_cfg.sx + vol_cfg.dx + 0.5f;
-  const float dy = (float(y) - cy) * vol_cfg.sy + vol_cfg.dy + 0.5f;
+  const float dx = (float(x) + 0.5f - cx) * vol_cfg.sx + vol_cfg.dx;
+  const float dy = (float(y) + 0.5f - cy) * vol_cfg.sy + vol_cfg.dy;
 
   const float ids = __fdividef(1.0f, proj_cfg.det_spacing_u);
   const float sdx = dx * ids;
@@ -213,10 +213,10 @@ backward_kernel_3d(T* __restrict__ output,
   const float cu = proj_cfg.det_count_u / 2.0f;
   const float cv = proj_cfg.det_count_v / 2.0f;
 
-  const float dx = (float(x) - cx) * vol_cfg.sx + vol_cfg.dx + 0.5f;
-  const float dy = (float(y) - cy) * vol_cfg.sy + vol_cfg.dy + 0.5f;
+  const float dx = (float(x) + 0.5f - cx) * vol_cfg.sx + vol_cfg.dx;
+  const float dy = (float(y) + 0.5f - cy) * vol_cfg.sy + vol_cfg.dy;
   const float dz =
-    (float(z) - cz) * vol_cfg.sz + vol_cfg.dz + 0.5f - proj_cfg.initial_z;
+    (float(z) + 0.5f - cz) * vol_cfg.sz + vol_cfg.dz - proj_cfg.initial_z;
 
   const float inv_det_spacing_u = __fdividef(1.0f, proj_cfg.det_spacing_u);
   const float inv_det_spacing_v = __fdividef(1.0f, proj_cfg.det_spacing_v);

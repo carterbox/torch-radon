@@ -45,6 +45,35 @@ for spacing in [1.0, 0.5, 1.3, 2.0]:
             params.append((4, (0, np.pi, 128), volume, spacing, det_count))
 
 
+def center_of_mass_2d(x):
+    y, x_idx = np.indices(x.shape)
+    weights = np.maximum(x, 0)
+    total = weights.sum()
+    return np.array([
+        (y * weights).sum() / total,
+        (x_idx * weights).sum() / total,
+    ])
+
+
+@pytest.mark.parametrize('voxel_size', [(1.0, 1.0), (2.0, 2.0), (1.3, 0.7)])
+def test_parallel_backprojection_respects_voxel_size(voxel_size):
+    image_size = 32
+    det_count = 48
+    angles = np.linspace(0, np.pi, 48, endpoint=False).astype(np.float32)
+
+    volume = torch_radon.volumes.Volume2D(voxel_size=voxel_size)
+    volume.set_size(image_size, image_size)
+    radon = torch_radon.ParallelBeam(det_count, angles, 2.0, volume)
+
+    x = torch.zeros(1, image_size, image_size, device=device)
+    x[:, 14:18, 14:18] = 1.0
+
+    y = radon.forward(x)
+    bp = radon.backward(y).detach().cpu().numpy()[0]
+
+    np.testing.assert_allclose(center_of_mass_2d(bp), np.array([15.5, 15.5]), atol=0.08)
+
+
 @pytest.mark.parametrize('batch_size, angles, volume, spacing, det_count', params)
 def test_error(batch_size, angles, volume, spacing, det_count):
     if volume is None:
