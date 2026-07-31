@@ -34,6 +34,7 @@ jobs:
       run: >
         CONDA_OVERRIDE_CUDA=${{ matrix.cuda-version }}
         conda create
+        --quiet
         -n torch
         -c conda-forge
         --solver=libmamba
