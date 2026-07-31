@@ -29,22 +29,6 @@ jobs:
             arch-list: "8.0;9.0;10.0;12.0"
     steps:
     - uses: actions/checkout@v3
-    - name: Install the CUDA toolkit
-      run: |
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-        sudo dpkg -i cuda-keyring_1.1-1_all.deb
-        sudo rm cuda-keyring_1.1-1_all.deb
-        sudo apt-get update
-        cversion=${{ matrix.cuda-version }}
-        sudo apt-get -y install cuda-minimal-build-${cversion//./-} libcurand-dev-${cversion//./-}
-        sudo dpkg -L cuda-nvcc-${cversion//./-}
-    - name: Check GCC toolchain
-      run: |
-        gcc --version
-        g++ --version
-    - name: Check NVCC toolchain
-      run: |
-        /usr/local/cuda-${{ matrix.cuda-version }}/bin/nvcc --version
     - uses: conda-incubator/setup-miniconda@v2
     - name: Install dependencies
       run: >
@@ -55,19 +39,29 @@ jobs:
         --solver=libmamba
         cuda-version=${{ matrix.cuda-version }}
         pytorch-gpu=${{ matrix.pytorch-version }}
+        gcc_linux-64=${{ matrix.gxx-version }}
         gxx_linux-64=${{ matrix.gxx-version }}
+        cuda-nvcc_linux-64=${{ matrix.cuda-version }}
+        cuda-cudart-dev
+        libcurand-dev
         scipy
         numpy
         pip
         setuptools
         ninja
         cmake
+        setuptools-scm
+        setuptools
+        toml
     - name: Build torch-radon
       run: |
         conda activate torch
         which python
+        gcc --version
+        g++ --version
+        nvcc --version
         export TORCH_CUDA_ARCH_LIST="${{ matrix.arch-list }}"
-        CUDA_HOME=/usr/local/cuda-${{ matrix.cuda-version }} pip install . -vv --no-deps --no-build-isolation --no-index
+        CUDA_HOME=$CONDA_PREFIX/targets/x86_64-linux/ pip install . -vv --no-deps --no-build-isolation --no-index
     - name: Test dependencies
       run: |
         conda activate torch
