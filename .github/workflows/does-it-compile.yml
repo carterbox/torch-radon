@@ -61,7 +61,7 @@ jobs:
         g++ --version
         nvcc --version
         export TORCH_CUDA_ARCH_LIST="${{ matrix.arch-list }}"
-        CUDA_HOME=$CONDA_PREFIX/targets/x86_64-linux/ pip install . -vv --no-deps --no-build-isolation --no-index
+        pip install . -vv --no-deps --no-build-isolation --no-index
     - name: Test dependencies
       run: |
         conda activate torch
