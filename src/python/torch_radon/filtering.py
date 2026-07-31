@@ -25,6 +25,7 @@ class FourierFilters:
         size: int,
         filter_name: typing.Literal[
             "ramp",
+            "ram-lak",
             "shepp-logan",
             "cosine",
             "hamming",
@@ -48,6 +49,11 @@ class FourierFilters:
         -------
         fourier_filter: ndarray
             The computed Fourier filter.
+
+        Raises
+        ------
+        ValueError
+            If filter_name is not one of the available filters.
 
         References
         ----------
@@ -82,7 +88,9 @@ class FourierFilters:
         elif filter_name == "hann":
             fourier_filter *= np.fft.fftshift(np.hanning(size))
         else:
-            print(
-                f"[TorchRadon] Error, unknown filter type '{filter_name}', available filters are: 'ramp', 'shepp-logan', 'cosine', 'hamming', 'hann'")
+            raise ValueError(
+                f"Unknown filter type '{filter_name}'. Available filters are: "
+                "'ramp', 'ram-lak', 'shepp-logan', 'cosine', 'hamming', 'hann'."
+            )
 
         return fourier_filter[:size//2+1]
