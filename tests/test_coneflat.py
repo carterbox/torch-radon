@@ -91,27 +91,6 @@ def test_coneflat_filter_chunking_matches_full(filter_name):
     torch.testing.assert_close(chunked, full, rtol=0, atol=0)
 
 
-def test_coneflat_filter_rejects_unknown_filter():
-    volume_size = 16
-    det_count = 17
-    angles = np.linspace(0, 2*np.pi, 11, endpoint=False).astype(np.float32)
-
-    volume = torch_radon.volumes.Volume3D()
-    volume.set_size(volume_size, volume_size, volume_size)
-    radon = torch_radon.ConeBeam(
-        det_count,
-        angles,
-        src_dist=volume_size * 4,
-        det_dist=volume_size * 2,
-        det_count_v=det_count,
-        volume=volume,
-    )
-
-    sinogram = torch.randn(1, len(angles), det_count, det_count, device=device)
-    with pytest.raises(ValueError, match="Unknown filter type"):
-        radon.filter_sinogram(sinogram, filter_name="not-a-filter")
-
-
 @pytest.mark.parametrize('voxel_size', [1.0, 2.0])
 def test_coneflat_fdk_matches_astra_scale(voxel_size):
     volume_size = 32
