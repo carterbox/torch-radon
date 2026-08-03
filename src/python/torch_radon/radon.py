@@ -315,7 +315,7 @@ class ConeBeam(BaseRadon):
         filter_name: typing.Literal[
             "ramp", "shepp-logan", "cosine", "hamming", "hann"
         ] = "ramp",
-        v_chunk_size: typing.Optional[int] = 32,
+        v_chunk_size: int | None = 32,
     ):
         r"""Filter cone-beam projections along the detector-u axis.
 
@@ -332,20 +332,36 @@ class ConeBeam(BaseRadon):
         if chunk_size <= 0:
             raise ValueError(f"v_chunk_size must be positive or None, got {v_chunk_size}")
 
-        filtered = torch.empty_like(sinogram)
-        for start in range(0, det_v, chunk_size):
-            end = min(start + chunk_size, det_v)
-            chunk = sinogram[:, :, start:end, :]
-            chunk = chunk.permute(0, 2, 1, 3).reshape(
-                batch_size * (end - start),
-                n_angles,
-                det_u,
+        if chunk_size >= det_v:
+            # Fast path: filter the 4D tensor directly — no permutes or reshapes.
+            padded_size = max(64, int(2 ** np.ceil(np.log2(2 * det_u))))
+            pad = padded_size - det_u
+            padded = torch.nn.functional.pad(sinogram.float(), (0, pad))
+            sino_fft = torch.fft.rfft(padded, norm="ortho")
+            f = self.fourier_filters.get(padded_size, filter_name, sinogram.device)
+            filtered = torch.fft.irfft(sino_fft * f, norm="ortho")
+            result = filtered[..., :-pad] * (np.pi / (2 * n_angles))
+            result = result.to(dtype=sinogram.dtype)
+        else:
+            # Chunked path: work in [batch, det_v, angles, det_u] layout so that
+            # slicing along det_v and writing results back are contiguous.
+            permuted = sinogram.permute(0, 2, 1, 3)
+            filtered = torch.empty(
+                batch_size, det_v, n_angles, det_u,
+                device=sinogram.device, dtype=sinogram.dtype,
             )
-            chunk = super().filter_sinogram(chunk, filter_name=filter_name)
-            chunk = chunk.reshape(batch_size, end - start, n_angles, det_u)
-            filtered[:, :, start:end, :].copy_(chunk.permute(0, 2, 1, 3))
+            for start in range(0, det_v, chunk_size):
+                end = min(start + chunk_size, det_v)
+                chunk = permuted[:, start:end].reshape(
+                    batch_size * (end - start), n_angles, det_u
+                )
+                chunk = super().filter_sinogram(chunk, filter_name=filter_name)
+                filtered[:, start:end] = chunk.reshape(
+                    batch_size, end - start, n_angles, det_u
+                )
+            result = filtered.permute(0, 2, 1, 3)
 
-        return shape_normalizer.unnormalize(filtered)
+        return shape_normalizer.unnormalize(result)
 
     def fdk_preweight(self, sinogram: torch.Tensor):
         r"""Apply the standard cone-beam FDK distance preweight."""
