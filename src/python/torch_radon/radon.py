@@ -309,6 +309,136 @@ class ConeBeam(BaseRadon):
 
         super().__init__(angles, volume, projection)
 
+    def filter_sinogram(
+        self,
+        sinogram: torch.Tensor,
+        filter_name: typing.Literal[
+            "ramp", "shepp-logan", "cosine", "hamming", "hann"
+        ] = "ramp",
+        v_chunk_size: int | None = 32,
+    ):
+        r"""Filter cone-beam projections along the detector-u axis.
+
+        The input shape is ``[..., angles, det_v, det_u]``. Filtering is
+        independent for each detector-v row, so processing detector-v in chunks
+        is mathematically equivalent to filtering all rows at once while using
+        less peak memory for the FFT intermediates.
+        """
+        shape_normalizer = ShapeNormalizer(3)
+        sinogram = shape_normalizer.normalize(sinogram)
+
+        batch_size, n_angles, det_v, det_u = sinogram.shape
+        chunk_size = det_v if v_chunk_size is None else int(v_chunk_size)
+        if chunk_size <= 0:
+            raise ValueError(f"v_chunk_size must be positive or None, got {v_chunk_size}")
+
+        if chunk_size >= det_v:
+            # Fast path: filter the 4D tensor directly — no permutes or reshapes.
+            padded_size = max(64, int(2 ** np.ceil(np.log2(2 * det_u))))
+            pad = padded_size - det_u
+            padded = torch.nn.functional.pad(sinogram.float(), (0, pad))
+            sino_fft = torch.fft.rfft(padded, norm="ortho")
+            f = self.fourier_filters.get(padded_size, filter_name, sinogram.device)
+            filtered = torch.fft.irfft(sino_fft * f, norm="ortho")
+            result = filtered[..., :-pad] * (np.pi / (2 * n_angles))
+            result = result.to(dtype=sinogram.dtype)
+        else:
+            # Chunked path: work in [batch, det_v, angles, det_u] layout so that
+            # slicing along det_v and writing results back are contiguous.
+            permuted = sinogram.permute(0, 2, 1, 3)
+            filtered = torch.empty(
+                batch_size, det_v, n_angles, det_u,
+                device=sinogram.device, dtype=sinogram.dtype,
+            )
+            for start in range(0, det_v, chunk_size):
+                end = min(start + chunk_size, det_v)
+                chunk = permuted[:, start:end].reshape(
+                    batch_size * (end - start), n_angles, det_u
+                )
+                chunk = super().filter_sinogram(chunk, filter_name=filter_name)
+                filtered[:, start:end] = chunk.reshape(
+                    batch_size, end - start, n_angles, det_u
+                )
+            result = filtered.permute(0, 2, 1, 3)
+
+        return shape_normalizer.unnormalize(result)
+
+    def fdk_preweight(self, sinogram: torch.Tensor):
+        r"""Apply the standard cone-beam FDK distance preweight."""
+        shape_normalizer = ShapeNormalizer(3)
+        sinogram = shape_normalizer.normalize(sinogram)
+
+        det_v = sinogram.shape[-2]
+        det_u = sinogram.shape[-1]
+        device = sinogram.device
+        # Compute the weight grid in float32 even for half-precision inputs to
+        # avoid overflow in source_to_detector**2 and precision loss in the
+        # sqrt/division. The result is cast back to the input dtype below.
+        compute_dtype = torch.float32
+
+        u = (
+            torch.arange(det_u, device=device, dtype=compute_dtype)
+            - (det_u - 1) / 2
+        ) * self.det_spacing_u
+        v = (
+            torch.arange(det_v, device=device, dtype=compute_dtype)
+            - (det_v - 1) / 2
+        ) * self.det_spacing_v
+
+        # Broadcast u and v into a (det_v, det_u) weight grid without allocating
+        # a full meshgrid (saves one det_v × det_u tensor).
+        uu = u.view(1, -1)
+        vv = v.view(-1, 1)
+
+        source_to_detector = self.src_dist + self.det_dist
+        weight = source_to_detector / torch.sqrt(source_to_detector**2 + uu**2 + vv**2)
+        weight = weight * (source_to_detector / self.src_dist)
+        weight = weight.to(dtype=sinogram.dtype)
+
+        weighted = sinogram * weight.view(1, 1, det_v, det_u)
+        return shape_normalizer.unnormalize(weighted)
+
+    def fdk(
+        self,
+        sinogram: torch.Tensor,
+        filter_name: typing.Literal[
+            "ramp", "shepp-logan", "cosine", "hamming", "hann"
+        ] = "ramp",
+        v_chunk_size: int | None = 32,
+        angles: torch.Tensor = None,
+        volume: Volume3D = None,
+        exec_cfg: cuda_backend.ExecCfg = None,
+    ):
+        r"""FDK reconstruction for circular cone-beam projections.
+
+        The expected sinogram shape is ``[..., angles, det_v, det_u]``. The
+        returned tensor has shape ``[..., depth, height, width]``.
+        """
+        sinogram = self.fdk_preweight(sinogram)
+        sinogram = self.filter_sinogram(
+            sinogram,
+            filter_name=filter_name,
+            v_chunk_size=v_chunk_size,
+        )
+
+        reconstruction = self.backward(
+            sinogram,
+            angles=angles,
+            volume=volume,
+            exec_cfg=exec_cfg,
+        )
+
+        # The backprojection kernel divides by det_spacing_u * det_spacing_v
+        # internally. The ramp filter is defined on physical detector-u
+        # coordinates, so the remaining det_spacing_v factor is applied here
+        # (the det_spacing_u factor cancels with the kernel's scaling).
+        source_to_detector = self.src_dist + self.det_dist
+        bp_scale = (
+            self.det_spacing_v
+            * (self.src_dist / source_to_detector) ** 2
+        )
+        return reconstruction * bp_scale
+
 
 expose_projection_attributes(
     ConeBeam,
