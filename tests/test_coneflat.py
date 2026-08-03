@@ -64,6 +64,114 @@ def test_coneflat_backprojection_respects_voxel_size(voxel_size):
     np.testing.assert_allclose(center_of_mass_3d(bp), np.array([15.5, 15.5, 15.5]), atol=0.08)
 
 
+@pytest.mark.parametrize('filter_name', ['ramp', 'shepp-logan', 'cosine', 'hamming', 'hann'])
+def test_coneflat_filter_chunking_matches_full(filter_name):
+    volume_size = 16
+    det_count_u = 31
+    det_count_v = 17
+    angles = np.linspace(0, 2*np.pi, 21, endpoint=False).astype(np.float32)
+
+    volume = torch_radon.volumes.Volume3D()
+    volume.set_size(volume_size, volume_size, volume_size)
+    radon = torch_radon.ConeBeam(
+        det_count_u,
+        angles,
+        src_dist=volume_size * 4,
+        det_dist=volume_size * 2,
+        det_count_v=det_count_v,
+        det_spacing_u=1.3,
+        det_spacing_v=1.1,
+        volume=volume,
+    )
+
+    sinogram = torch.randn(2, len(angles), det_count_v, det_count_u, device=device)
+    full = radon.filter_sinogram(sinogram, filter_name=filter_name, v_chunk_size=None)
+    chunked = radon.filter_sinogram(sinogram, filter_name=filter_name, v_chunk_size=4)
+
+    torch.testing.assert_close(chunked, full, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize('voxel_size', [1.0, 2.0])
+def test_coneflat_fdk_matches_astra_scale(voxel_size):
+    volume_size = 32
+    det_count = 48
+    angles = np.linspace(0, 2*np.pi, 90, endpoint=False).astype(np.float32)
+    src_dist = volume_size * 4.0 * voxel_size
+    det_dist = volume_size * 2.0 * voxel_size
+    det_spacing = 1.5 * voxel_size
+
+    z, y, x = np.indices((volume_size, volume_size, volume_size))
+    center = (volume_size - 1) / 2
+    phantom = (
+        ((x - center)**2 + ((y - center) * 1.2)**2 + ((z - center) * 0.8)**2)
+        < (volume_size * 0.22)**2
+    ).astype(np.float32)
+    phantom += 0.5 * (
+        (((x - (center + 4)) * 1.2)**2 + (y - (center - 3))**2 + ((z - center) * 1.1)**2)
+        < (volume_size * 0.13)**2
+    ).astype(np.float32)
+
+    volume_half_size = volume_size * voxel_size / 2
+    vol_geom = astra.create_vol_geom(
+        volume_size,
+        volume_size,
+        volume_size,
+        -volume_half_size,
+        volume_half_size,
+        -volume_half_size,
+        volume_half_size,
+        -volume_half_size,
+        volume_half_size,
+    )
+    proj_geom = astra.create_proj_geom(
+        'cone',
+        det_spacing,
+        det_spacing,
+        det_count,
+        det_count,
+        angles,
+        src_dist,
+        det_dist,
+    )
+    proj_id, astra_y = astra.create_sino3d_gpu(phantom, proj_geom, vol_geom)
+    rec_id = astra.data3d.create('-vol', vol_geom)
+    alg_id = None
+    try:
+        cfg = astra.astra_dict('FDK_CUDA')
+        cfg['ReconstructionDataId'] = rec_id
+        cfg['ProjectionDataId'] = proj_id
+        alg_id = astra.algorithm.create(cfg)
+        astra.algorithm.run(alg_id)
+        astra_rec = astra.data3d.get(rec_id)
+    finally:
+        if alg_id is not None:
+            astra.algorithm.delete(alg_id)
+        astra.data3d.delete(rec_id)
+        astra.data3d.delete(proj_id)
+
+    volume = torch_radon.volumes.Volume3D(voxel_size=(voxel_size, voxel_size, voxel_size))
+    volume.set_size(volume_size, volume_size, volume_size)
+    radon = torch_radon.ConeBeam(
+        det_count,
+        angles,
+        src_dist,
+        det_dist,
+        det_count_v=det_count,
+        det_spacing_u=det_spacing,
+        det_spacing_v=det_spacing,
+        volume=volume,
+    )
+
+    torch_phantom = torch.tensor(phantom, device=device).unsqueeze(0)
+    torch_rec = radon.fdk(radon.forward(torch_phantom), v_chunk_size=8).detach().cpu().numpy()[0]
+
+    fdk_error = relative_error(astra_rec, torch_rec)
+    scale = np.sum(torch_rec * astra_rec) / (np.sum(torch_rec * torch_rec) + 1e-12)
+
+    assert_less(fdk_error, 3e-3)
+    np.testing.assert_allclose(scale, 1.0, rtol=3e-3, atol=3e-3)
+
+
 @pytest.mark.parametrize('device, batch_size, volume_size, angles, det_spacing, distances, det_count', params)
 def test_fanflat_error(device, batch_size, volume_size, angles, det_spacing, distances, det_count):
     # generate random images
@@ -162,3 +270,71 @@ def test_half(device, batch_size, volume_size, angles, det_spacing, distances, d
     # TODO better checks
     assert_less(forward_error, 3e-3)
     assert_less(back_error, 3e-3)
+
+
+def test_coneflat_fdk_preweight_half_no_overflow():
+    """Half-precision fdk_preweight must not overflow or produce NaN/Inf.
+
+    The weight grid is computed in float32 internally, so even large
+    source-to-detector distances (whose squares exceed the float16 max of
+    ~65504) must yield finite weights.
+    """
+    volume_size = 32
+    det_count = 48
+    angles = np.linspace(0, 2 * np.pi, 90, endpoint=False).astype(np.float32)
+
+    volume = torch_radon.volumes.Volume3D()
+    volume.set_size(volume_size, volume_size, volume_size)
+    radon = torch_radon.ConeBeam(
+        det_count,
+        angles,
+        src_dist=volume_size * 4,
+        det_dist=volume_size * 2,
+        det_count_v=det_count,
+        det_spacing_u=1.5,
+        det_spacing_v=1.5,
+        volume=volume,
+    )
+
+    sinogram = torch.randn(1, len(angles), det_count, det_count, device=device).half()
+    weighted = radon.fdk_preweight(sinogram)
+
+    assert weighted.dtype == torch.float16
+    assert torch.isfinite(weighted).all(), "fdk_preweight produced non-finite values in half precision"
+
+
+def test_coneflat_fdk_half_matches_float():
+    """FDK in half precision should stay close to the float32 reference."""
+    volume_size = 32
+    det_count = 48
+    angles = np.linspace(0, 2 * np.pi, 90, endpoint=False).astype(np.float32)
+
+    volume = torch_radon.volumes.Volume3D()
+    volume.set_size(volume_size, volume_size, volume_size)
+    radon = torch_radon.ConeBeam(
+        det_count,
+        angles,
+        src_dist=volume_size * 4,
+        det_dist=volume_size * 2,
+        det_count_v=det_count,
+        det_spacing_u=1.5,
+        det_spacing_v=1.5,
+        volume=volume,
+    )
+
+    z, y, x = np.indices((volume_size, volume_size, volume_size))
+    center = (volume_size - 1) / 2
+    phantom = (
+        ((x - center) ** 2 + ((y - center) * 1.2) ** 2 + ((z - center) * 0.8) ** 2)
+        < (volume_size * 0.22) ** 2
+    ).astype(np.float32)
+
+    torch_phantom = torch.tensor(phantom, device=device).unsqueeze(0)
+    sino = radon.forward(torch_phantom)
+
+    rec_float = radon.fdk(sino.clone()).detach().cpu().numpy()[0]
+    # Half precision requires batch size to be a multiple of 4.
+    rec_half = radon.fdk(sino.clone().half().repeat(4, 1, 1, 1)).detach().float().cpu().numpy()[0]
+
+    error = relative_error(rec_float, rec_half)
+    assert_less(error, 1e-1)
