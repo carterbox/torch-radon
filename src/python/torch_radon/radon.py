@@ -371,21 +371,29 @@ class ConeBeam(BaseRadon):
         det_v = sinogram.shape[-2]
         det_u = sinogram.shape[-1]
         device = sinogram.device
-        dtype = sinogram.dtype
+        # Compute the weight grid in float32 even for half-precision inputs to
+        # avoid overflow in source_to_detector**2 and precision loss in the
+        # sqrt/division. The result is cast back to the input dtype below.
+        compute_dtype = torch.float32
 
         u = (
-            torch.arange(det_u, device=device, dtype=dtype)
+            torch.arange(det_u, device=device, dtype=compute_dtype)
             - (det_u - 1) / 2
         ) * self.det_spacing_u
         v = (
-            torch.arange(det_v, device=device, dtype=dtype)
+            torch.arange(det_v, device=device, dtype=compute_dtype)
             - (det_v - 1) / 2
         ) * self.det_spacing_v
-        vv, uu = torch.meshgrid(v, u, indexing="ij")
+
+        # Broadcast u and v into a (det_v, det_u) weight grid without allocating
+        # a full meshgrid (saves one det_v × det_u tensor).
+        uu = u.view(1, -1)
+        vv = v.view(-1, 1)
 
         source_to_detector = self.src_dist + self.det_dist
         weight = source_to_detector / torch.sqrt(source_to_detector**2 + uu**2 + vv**2)
         weight = weight * (source_to_detector / self.src_dist)
+        weight = weight.to(dtype=sinogram.dtype)
 
         weighted = sinogram * weight.view(1, 1, det_v, det_u)
         return shape_normalizer.unnormalize(weighted)
@@ -396,7 +404,7 @@ class ConeBeam(BaseRadon):
         filter_name: typing.Literal[
             "ramp", "shepp-logan", "cosine", "hamming", "hann"
         ] = "ramp",
-        v_chunk_size: typing.Optional[int] = 32,
+        v_chunk_size: int | None = 32,
         angles: torch.Tensor = None,
         volume: Volume3D = None,
         exec_cfg: cuda_backend.ExecCfg = None,
@@ -413,8 +421,6 @@ class ConeBeam(BaseRadon):
             v_chunk_size=v_chunk_size,
         )
 
-        # The ramp filter is defined on physical detector-u coordinates.
-        sinogram = sinogram / self.det_spacing_u
         reconstruction = self.backward(
             sinogram,
             angles=angles,
@@ -422,10 +428,13 @@ class ConeBeam(BaseRadon):
             exec_cfg=exec_cfg,
         )
 
+        # The backprojection kernel divides by det_spacing_u * det_spacing_v
+        # internally. The ramp filter is defined on physical detector-u
+        # coordinates, so the remaining det_spacing_v factor is applied here
+        # (the det_spacing_u factor cancels with the kernel's scaling).
         source_to_detector = self.src_dist + self.det_dist
         bp_scale = (
-            self.det_spacing_u
-            * self.det_spacing_v
+            self.det_spacing_v
             * (self.src_dist / source_to_detector) ** 2
         )
         return reconstruction * bp_scale

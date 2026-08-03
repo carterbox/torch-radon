@@ -270,3 +270,71 @@ def test_half(device, batch_size, volume_size, angles, det_spacing, distances, d
     # TODO better checks
     assert_less(forward_error, 3e-3)
     assert_less(back_error, 3e-3)
+
+
+def test_coneflat_fdk_preweight_half_no_overflow():
+    """Half-precision fdk_preweight must not overflow or produce NaN/Inf.
+
+    The weight grid is computed in float32 internally, so even large
+    source-to-detector distances (whose squares exceed the float16 max of
+    ~65504) must yield finite weights.
+    """
+    volume_size = 32
+    det_count = 48
+    angles = np.linspace(0, 2 * np.pi, 90, endpoint=False).astype(np.float32)
+
+    volume = torch_radon.volumes.Volume3D()
+    volume.set_size(volume_size, volume_size, volume_size)
+    radon = torch_radon.ConeBeam(
+        det_count,
+        angles,
+        src_dist=volume_size * 4,
+        det_dist=volume_size * 2,
+        det_count_v=det_count,
+        det_spacing_u=1.5,
+        det_spacing_v=1.5,
+        volume=volume,
+    )
+
+    sinogram = torch.randn(1, len(angles), det_count, det_count, device=device).half()
+    weighted = radon.fdk_preweight(sinogram)
+
+    assert weighted.dtype == torch.float16
+    assert torch.isfinite(weighted).all(), "fdk_preweight produced non-finite values in half precision"
+
+
+def test_coneflat_fdk_half_matches_float():
+    """FDK in half precision should stay close to the float32 reference."""
+    volume_size = 32
+    det_count = 48
+    angles = np.linspace(0, 2 * np.pi, 90, endpoint=False).astype(np.float32)
+
+    volume = torch_radon.volumes.Volume3D()
+    volume.set_size(volume_size, volume_size, volume_size)
+    radon = torch_radon.ConeBeam(
+        det_count,
+        angles,
+        src_dist=volume_size * 4,
+        det_dist=volume_size * 2,
+        det_count_v=det_count,
+        det_spacing_u=1.5,
+        det_spacing_v=1.5,
+        volume=volume,
+    )
+
+    z, y, x = np.indices((volume_size, volume_size, volume_size))
+    center = (volume_size - 1) / 2
+    phantom = (
+        ((x - center) ** 2 + ((y - center) * 1.2) ** 2 + ((z - center) * 0.8) ** 2)
+        < (volume_size * 0.22) ** 2
+    ).astype(np.float32)
+
+    torch_phantom = torch.tensor(phantom, device=device).unsqueeze(0)
+    sino = radon.forward(torch_phantom)
+
+    rec_float = radon.fdk(sino.clone()).detach().cpu().numpy()[0]
+    # Half precision requires batch size to be a multiple of 4.
+    rec_half = radon.fdk(sino.clone().half().repeat(4, 1, 1, 1)).detach().float().cpu().numpy()[0]
+
+    error = relative_error(rec_float, rec_half)
+    assert_less(error, 1e-1)
